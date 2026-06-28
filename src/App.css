@@ -44,6 +44,9 @@ h1 {
   font-size: clamp(1.35rem, 3.4vw, 2.35rem);
   line-height: 0.88;
   margin-bottom: 0;
+  text-orientation: mixed;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
 }
 
 h2 {
