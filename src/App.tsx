@@ -83,7 +83,6 @@ function App() {
   const [practiceStep, setPracticeStep] = useState<PracticeStep>('ready')
   const [practiceFeedback, setPracticeFeedback] = useState<PracticeFeedback>(null)
   const [speaking, setSpeaking] = useState(false)
-  const [selectedGardenItem, setSelectedGardenItem] = useState<InventoryKey | null>(null)
 
   const activeCurriculum = useMemo(() => mergeCurriculum(state.customCurriculum), [state.customCurriculum])
   const todayMission = useMemo(() => generateDailyMission(state), [state])
@@ -403,17 +402,6 @@ function App() {
 
     setState((current) => action(current))
     setFeedback(`${meta.label} 放好啦！`)
-    setSelectedGardenItem(null)
-  }
-
-  const handleSelectGardenItem = (key: InventoryKey) => {
-    const meta = inventoryCatalog[key]
-    if (state.inventory[key] <= 0) {
-      setFeedback(`${meta.label} 还没有，先去练习得星星或兑换补充。`)
-      return
-    }
-    setSelectedGardenItem((current) => (current === key ? null : key))
-    setFeedback(`已选择 ${meta.label}，现在点击田地或鸡窝就能使用。`)
   }
 
   const handleBuyShopItem = (key: InventoryKey, cost: number) => {
@@ -488,7 +476,6 @@ function App() {
       setActiveTaskId(null)
       setPracticeStep('ready')
       setPracticeFeedback(null)
-      setSelectedGardenItem(null)
       setFeedback('备份导入成功，学习记录已经恢复。')
     } catch (error) {
       console.error('Failed to import backup', error)
@@ -660,16 +647,16 @@ function App() {
             </div>
             <BerryBuddy mood={todayMission.completed ? 'happy' : 'ready'} />
           </div>
-          <GardenScene state={state} selectedItem={selectedGardenItem} onDropItem={handleGardenDrop} onHarvest={handleHarvestPlot} />
+          <GardenScene state={state} onDropItem={handleGardenDrop} onHarvest={handleHarvestPlot} />
           <section className="card drag-shelf" aria-label="可拖拽仓库快捷栏">
             <div>
-              <p className="eyebrow">拖一拖 / 点一点</p>
+              <p className="eyebrow">鼠标拖拽</p>
               <h3>花园快捷仓库</h3>
-              <p className="soft-text shelf-tip">手机上可以先点材料，再点田地或鸡窝。</p>
+              <p className="soft-text shelf-tip">使用鼠标拖动材料到田地或鸡窝。</p>
             </div>
             <div className="drag-item-grid">
               {gardenInventoryKeys.map((key) => (
-                <DraggableInventoryItem key={key} itemKey={key} count={state.inventory[key]} compact selected={selectedGardenItem === key} onSelect={handleSelectGardenItem} />
+                <DraggableInventoryItem key={key} itemKey={key} count={state.inventory[key]} compact />
               ))}
             </div>
           </section>
@@ -1048,13 +1035,11 @@ function getGardenDropAction(plot: GardenPlot | undefined, zone: GardenZone, key
 function GardenPlotCard({
   plot,
   zone,
-  selectedItem,
   onDropItem,
   onHarvest,
 }: {
   plot: GardenPlot
   zone: GardenZone
-  selectedItem: InventoryKey | null
   onDropItem: (plot: GardenPlot, zone: GardenZone, key: InventoryKey) => void
   onHarvest: (plot: GardenPlot) => void
 }) {
@@ -1070,16 +1055,12 @@ function GardenPlotCard({
   }
 
   const handleHarvestClick = () => {
-    if (selectedItem && !plot.ready) {
-      onDropItem(plot, zone, selectedItem)
-      return
-    }
     if (plot.ready) onHarvest(plot)
   }
 
   return (
     <article
-      className={`plot-card ${zone} ${plot.kind} ${plot.ready ? 'ready' : ''} ${selectedItem ? 'tap-target' : ''}`}
+      className={`plot-card ${zone} ${plot.kind} ${plot.ready ? 'ready' : ''}`}
       aria-label={ariaLabel}
       onDragOver={(event) => event.preventDefault()}
       onDrop={handleDrop}
@@ -1129,12 +1110,10 @@ function getPlotMeta(plot: GardenPlot, zone?: GardenZone): { itemKey?: Inventory
 
 function GardenScene({
   state,
-  selectedItem,
   onDropItem,
   onHarvest,
 }: {
   state: GameState
-  selectedItem: InventoryKey | null
   onDropItem: (plot: GardenPlot, zone: GardenZone, key: InventoryKey) => void
   onHarvest: (plot: GardenPlot) => void
 }) {
@@ -1156,13 +1135,13 @@ function GardenScene({
         </div>
         <div className="garden-field-zone" aria-label="四块田地">
           {fieldPlots.map((plot) => (
-            <GardenPlotCard key={plot.id} plot={plot} zone="field" selectedItem={selectedItem} onDropItem={onDropItem} onHarvest={onHarvest} />
+            <GardenPlotCard key={plot.id} plot={plot} zone="field" onDropItem={onDropItem} onHarvest={onHarvest} />
           ))}
         </div>
         {coopPlot && (
           <>
             <div className="garden-coop-zone" aria-label="一个鸡窝">
-              <GardenPlotCard plot={coopPlot} zone="coop" selectedItem={selectedItem} onDropItem={onDropItem} onHarvest={onHarvest} />
+              <GardenPlotCard plot={coopPlot} zone="coop" onDropItem={onDropItem} onHarvest={onHarvest} />
             </div>
           </>
         )}
@@ -1183,15 +1162,11 @@ function DraggableInventoryItem({
   count,
   large = false,
   compact = false,
-  selected = false,
-  onSelect,
 }: {
   itemKey: InventoryKey
   count: number
   large?: boolean
   compact?: boolean
-  selected?: boolean
-  onSelect?: (key: InventoryKey) => void
 }) {
   const meta = inventoryCatalog[itemKey]
   const canDrag = count > 0
@@ -1204,17 +1179,9 @@ function DraggableInventoryItem({
 
   return (
     <article
-      className={`reward-card draggable-item ${large ? 'large' : ''} ${compact ? 'compact' : ''} ${selected ? 'selected' : ''} ${canDrag ? '' : 'empty'}`}
+      className={`reward-card draggable-item ${large ? 'large' : ''} ${compact ? 'compact' : ''} ${canDrag ? '' : 'empty'}`}
       draggable={canDrag}
       onDragStart={handleDragStart}
-      onClick={() => onSelect?.(itemKey)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onSelect?.(itemKey)
-        }
-      }}
-      {...(onSelect ? { role: 'button' as const, tabIndex: 0 } : {})}
       title={canDrag ? `拖动 ${meta.label}` : `${meta.label} 数量为 0`}
     >
       <ItemIcon itemKey={itemKey} />

@@ -10,7 +10,7 @@
 .practice-layout,
 .parent-grid {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .topbar {
@@ -29,7 +29,7 @@ nav,
 .practice-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
 }
 
 h1,
@@ -93,8 +93,8 @@ button:disabled {
   display: inline-flex;
   gap: 8px;
   justify-content: center;
-  min-height: 56px;
-  padding: 12px 22px;
+  min-height: 44px;
+  padding: 8px 16px;
   box-shadow: inset 0 0 0 2px #ffd1e6;
 }
 
@@ -1117,12 +1117,6 @@ button:disabled {
   opacity: 0.56;
 }
 
-.draggable-item.selected {
-  border-color: #ff9f45;
-  box-shadow: 0 0 0 4px rgba(255, 159, 69, 0.2), 0 16px 26px rgba(255, 111, 169, 0.2);
-  transform: translateY(-3px) scale(1.03);
-}
-
 .draggable-item.large {
   min-height: 210px;
 }
@@ -1382,12 +1376,6 @@ button:disabled {
   border-color: rgba(255, 209, 92, 0.68);
   box-shadow: 0 16px 28px rgba(80, 130, 63, 0.18), 0 0 0 3px rgba(255, 209, 92, 0.12);
   transform: translateY(-4px) scale(1.02);
-}
-
-.garden-scene .plot-card.tap-target {
-  cursor: pointer;
-  outline: 4px dashed rgba(255, 159, 69, 0.5);
-  outline-offset: 4px;
 }
 
 .garden-scene .plot-card.coop {
@@ -2564,300 +2552,3 @@ button:disabled {
   }
 }
 
-@media (max-width: 880px) {
-  .topbar,
-  .hero-grid,
-  .hero-card,
-  .garden-hero-card,
-  .drag-shelf,
-  .practice-layout,
-  .word-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .word-detail {
-    position: static;
-  }
-
-  .topbar {
-    text-align: center;
-  }
-
-  nav,
-  .hero-actions,
-  .practice-actions {
-    justify-content: center;
-  }
-
-  .mix-panel {
-    align-items: stretch;
-    flex-direction: column;
-    text-align: center;
-  }
-
-  .garden-scene {
-    min-height: 860px;
-  }
-
-  .garden-paths {
-    display: none;
-  }
-
-  .garden-ground {
-    display: grid;
-    gap: 16px;
-    grid-template-areas:
-      'house coop'
-      'fields fields'
-      'friends friends';
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 142px auto 150px;
-    padding: 20px 18px 28px;
-  }
-
-  .garden-house {
-    align-self: start;
-    bottom: auto;
-    grid-area: house;
-    justify-self: start;
-    left: auto;
-    position: relative;
-    top: auto;
-    width: 152px;
-  }
-
-  .garden-house-icon {
-    height: 116px;
-    width: 116px;
-  }
-
-  .field-label,
-  .coop-label {
-    display: none;
-  }
-
-  .garden-field-zone,
-  .garden-coop-zone {
-    left: auto;
-    position: static;
-    right: auto;
-    width: auto;
-  }
-
-  .garden-field-zone {
-    bottom: auto;
-    grid-area: fields;
-    grid-template-columns: repeat(2, 120px);
-    justify-content: center;
-    justify-self: center;
-    width: 258px;
-  }
-
-  .garden-coop-zone {
-    align-self: start;
-    grid-area: coop;
-    grid-template-columns: 124px;
-    justify-self: end;
-    top: auto;
-    width: 124px;
-  }
-
-  .garden-scene .plot-card.coop.empty,
-  .garden-scene .plot-card.coop.chicken {
-    grid-template-rows: 102px 22px 30px 54px;
-    min-height: 222px;
-    width: 124px;
-  }
-
-  .garden-scene .plot-card {
-    min-height: 138px;
-  }
-
-  .garden-scene .plot-card.empty {
-    min-height: 108px;
-    width: 108px;
-  }
-
-  .plot-ui-icon {
-    height: 84px;
-    width: 84px;
-  }
-
-  .plot-item-icon {
-    height: 72px;
-    width: 72px;
-  }
-
-  .coop-with-chickens {
-    height: 102px;
-    width: 118px;
-  }
-
-  .coop-base-icon {
-    height: 98px;
-    width: 98px;
-  }
-
-  .garden-characters {
-    display: grid;
-    gap: 8px 18px;
-    grid-area: friends;
-    grid-template-columns: repeat(4, minmax(58px, 1fr));
-    inset: auto;
-    justify-items: center;
-    position: static;
-    width: 100%;
-  }
-
-  .garden-friend .mini-character {
-    height: 64px;
-    width: 64px;
-  }
-
-  .garden-friend {
-    animation: gardenBounce 2.2s ease-in-out infinite;
-    bottom: auto;
-    left: auto;
-    position: static;
-    right: auto;
-    top: auto;
-    transform: none;
-  }
-}
-
-@media (max-width: 560px) {
-  .word-toolbar,
-  .profile-controls {
-    min-width: 0;
-  }
-
-  .word-toolbar label,
-  .profile-controls label {
-    min-width: 0;
-  }
-
-  .garden-scene {
-    border-radius: 32px;
-    min-height: 800px;
-  }
-
-  .playable-garden::after {
-    border-radius: 28px;
-    bottom: 10px;
-    height: 54%;
-    left: 8px;
-    right: 8px;
-  }
-
-  .garden-ground {
-    gap: 12px;
-    grid-template-rows: 122px auto 132px;
-    padding: 16px 10px 22px;
-  }
-
-  .garden-house {
-    width: 118px;
-  }
-
-  .garden-house-icon {
-    height: 88px;
-    width: 88px;
-  }
-
-  .garden-house strong {
-    font-size: 0.82rem;
-  }
-
-  .garden-field-zone {
-    gap: 12px;
-    grid-template-columns: repeat(2, 108px);
-    width: 228px;
-  }
-
-  .garden-coop-zone {
-    grid-template-columns: 112px;
-    width: 112px;
-  }
-
-  .garden-scene .plot-card.coop.empty,
-  .garden-scene .plot-card.coop.chicken {
-    grid-template-rows: 92px 20px 28px 50px;
-    min-height: 212px;
-    width: 112px;
-  }
-
-  .garden-scene .plot-card {
-    border-radius: 18px;
-    min-height: 128px;
-    padding: 7px;
-  }
-
-  .garden-scene .plot-card.empty {
-    min-height: 100px;
-    width: 100px;
-  }
-
-  .plot-ui-icon {
-    height: 78px;
-    width: 78px;
-  }
-
-  .plot-item-icon {
-    height: 64px;
-    width: 64px;
-  }
-
-  .garden-scene .plot-art {
-    min-height: 68px;
-  }
-
-  .garden-scene .plot-card h3 {
-    font-size: 0.86rem;
-  }
-
-  .mini-status-icon {
-    height: 26px;
-    width: 26px;
-  }
-
-  .coop-with-chickens {
-    height: 92px;
-    width: 108px;
-  }
-
-  .coop-base-icon {
-    height: 90px;
-    width: 90px;
-  }
-
-  .coop-chicken-icon {
-    height: 34px;
-    width: 34px;
-  }
-
-  .coop-chicken-icon.chicken-1 {
-    left: 37px;
-  }
-
-  .coop-chicken-icon.chicken-2 {
-    left: 13px;
-  }
-
-  .coop-chicken-icon.chicken-3 {
-    right: 13px;
-  }
-
-  .garden-characters {
-    gap: 6px 10px;
-    grid-template-columns: repeat(4, minmax(46px, 1fr));
-  }
-
-  .garden-friend {
-    font-size: 0;
-  }
-
-  .garden-friend .mini-character {
-    height: 56px;
-    width: 56px;
-  }
-}
