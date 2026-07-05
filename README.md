@@ -25,7 +25,7 @@ sh start.sh
 ### Windows 用户
 
 ```cmd
-:: 1️⃣ 一键安装（首次使用，需先手动安装 Node.js，见下方说明）
+:: 1️⃣ 一键安装（首次使用，自动安装 Node.js + Git + 项目依赖）
 install.bat
 
 :: 2️⃣ 一键启动（以后每次使用只需这一条）
@@ -34,11 +34,7 @@ start.bat
 
 > **怎么打开命令行？** 按 `Win + R`，输入 `cmd`，按回车。也可以直接双击 `install.bat` / `start.bat` 文件
 
-> **Windows 用户请先安装 Node.js**：`install.bat` 不会自动安装 Node.js，请先手动安装：
-> 1. 打开 https://nodejs.org/
-> 2. 下载 **LTS 版本** 的 `.msi` 安装包
-> 3. 双击安装，一路点"下一步"
-> 4. 安装完成后重新运行 `install.bat`
+> **Windows 一键安装说明**：`install.bat` 会自动通过 `winget` 安装 Node.js 22 LTS 和 Git，全程无需手动操作。如果系统不支持 `winget`（Windows 10 较老版本），会自动改用 PowerShell 下载安装。安装 Node.js 时可能弹出管理员权限确认框，点"是"即可。
 
 ### 没有项目代码？
 
@@ -72,7 +68,7 @@ http://localhost:5173/
 
 | 问题 | 解决方法 |
 | --- | --- |
-| `npm install` 报错 | 确认 Node.js 版本 ≥ 22（`node -v`），如果版本低请去 nodejs.org 更新 |
+| `npm install` 报错 | 重新运行 `install.bat`（Mac 运行 `sh install.sh`）即可自动修复，或手动确认 `node -v` 版本 ≥ 22 |
 | 端口被占用 | 项目会自动释放端口，如果还是不行，重启电脑后再试 |
 | 浏览器打不开页面 | 确认终端里显示了 `http://localhost:5173/`，且终端窗口没关闭 |
 | 页面打开了但功能不正常 | 确认用的是 **Chrome** 或 **Edge** 浏览器，Safari 和 Firefox 对语音识别支持不好 |
