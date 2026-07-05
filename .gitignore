@@ -18,6 +18,9 @@ data/
 # 备份目录
 public/_asset-backup-before-white-clean/
 
+# 文档截图目录
+docs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
