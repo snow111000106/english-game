@@ -8,9 +8,33 @@
 
 ## 🚀 快速部署（面向电脑小白）
 
-整套系统只需要两条命令就能搞定。
+### ✨ 零基础一键安装（推荐！不需要提前准备任何东西）
 
-### Mac 用户
+> 完全不会用电脑？没关系！只需要复制下面**一条命令**，粘贴到命令行里，按回车，剩下的全自动。
+
+**Mac 用户** — 打开终端（按 `Command + 空格`，输入 `终端`，按回车），粘贴：
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/snow111000106/english-game/agent/setup.sh)"
+```
+
+**Windows 用户** — 打开 PowerShell（按 `Win + R`，输入 `powershell`，按回车），粘贴：
+
+```powershell
+irm https://raw.githubusercontent.com/snow111000106/english-game/agent/setup.bat | iex
+```
+
+> 这条命令会自动完成所有事情：下载项目代码 → 安装 Node.js → 安装依赖，全程不需要你做任何操作。
+>
+> **Windows 用户**：如果弹出管理员权限确认框，点"是"即可。如果用 PowerShell 方式运行不了，也可以用浏览器打开 https://github.com/snow111000106/english-game ，点击绿色 `Code` 按钮 → `Download ZIP`，解压后双击里面的 `setup.bat`。
+
+---
+
+### 已经有项目代码了？
+
+如果你已经下载/克隆了项目代码，直接在项目目录中运行安装脚本即可：
+
+#### Mac 用户
 
 ```bash
 # 1️⃣ 一键安装（首次使用，自动安装 Node.js + Git + 项目依赖）
@@ -22,7 +46,7 @@ sh start.sh
 
 > **怎么打开终端？** 按 `Command + 空格`，输入 `终端` 或 `Terminal`，按回车
 
-### Windows 用户
+#### Windows 用户
 
 ```cmd
 :: 1️⃣ 一键安装（首次使用，自动安装 Node.js + Git + 项目依赖）
@@ -35,17 +59,6 @@ start.bat
 > **怎么打开命令行？** 按 `Win + R`，输入 `cmd`，按回车。也可以直接双击 `install.bat` / `start.bat` 文件
 
 > **Windows 一键安装说明**：`install.bat` 会自动通过 `winget` 安装 Node.js 22 LTS 和 Git，全程无需手动操作。如果系统不支持 `winget`（Windows 10 较老版本），会自动改用 PowerShell 下载安装。安装 Node.js 时可能弹出管理员权限确认框，点"是"即可。
-
-### 没有项目代码？
-
-如果你还没有项目代码，先克隆仓库：
-
-```bash
-git clone https://github.com/snow111000106/english-game.git
-cd english-game
-```
-
-然后再运行上面的安装命令。Mac 的 `install.sh` 如果检测到不在项目目录中，也会自动克隆到桌面。
 
 ### 启动后
 

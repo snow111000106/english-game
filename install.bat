@@ -127,21 +127,43 @@ echo   ⚠️  当前目录不是项目目录
 if exist "%USERPROFILE%\Desktop\english-game\package.json" (
     echo   📁 发现桌面已有项目，进入该目录...
     cd /d "%USERPROFILE%\Desktop\english-game"
-    git pull origin agent >nul 2>&1
+    where git >nul 2>&1
+    if !errorlevel! equ 0 (
+        git pull origin agent >nul 2>&1
+    ) else (
+        echo   (无法自动更新，继续使用现有版本)
+    )
     goto :install_deps
 ) else (
-    echo   正在克隆项目到桌面...
+    echo   正在下载项目到桌面...
     where git >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo   ❌ 需要 Git 来克隆项目，请先安装 Git
-        echo   下载地址：https://git-scm.com/download/win
-        pause
-        exit /b 1
+    if !errorlevel! equ 0 (
+        git clone https://github.com/snow111000106/english-game.git "%USERPROFILE%\Desktop\english-game"
+        cd /d "%USERPROFILE%\Desktop\english-game"
+        git checkout agent
+        echo   ✅ 项目已克隆到桌面
+    ) else (
+        echo   📦 Git 不可用，正在通过 PowerShell 下载项目 ZIP 包...
+        powershell -Command "^
+            $progressPreference = 'SilentlyContinue';^
+            $url = 'https://github.com/snow111000106/english-game/archive/refs/heads/agent.zip';^
+            $out = '$env:TEMP\english-game.zip';^
+            Write-Host '  正在下载...';^
+            Invoke-WebRequest -Uri $url -OutFile $out;^
+            Write-Host '  正在解压...';^
+            Expand-Archive -Path $out -DestinationPath '$env:TEMP\english-game-extract' -Force;^
+            if (Test-Path '$env:USERPROFILE\Desktop\english-game') { Remove-Item '$env:USERPROFILE\Desktop\english-game' -Recurse -Force; }^
+            Move-Item '$env:TEMP\english-game-extract\english-game-agent' '$env:USERPROFILE\Desktop\english-game';^
+            Write-Host '  ✅ 项目已下载到桌面';^
+        "
+        if !errorlevel! neq 0 (
+            echo   ❌ 项目下载失败，请检查网络连接
+            echo   或手动下载：https://github.com/snow111000106/english-game
+            pause
+            exit /b 1
+        )
+        cd /d "%USERPROFILE%\Desktop\english-game"
     )
-    git clone https://github.com/snow111000106/english-game.git "%USERPROFILE%\Desktop\english-game"
-    cd /d "%USERPROFILE%\Desktop\english-game"
-    git checkout agent
-    echo   ✅ 项目已克隆到桌面
 )
 
 :install_deps
