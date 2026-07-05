@@ -28,6 +28,51 @@ const hash = (text: string) => {
 
 const unique = <T>(items: T[]) => Array.from(new Set(items))
 
+const dailyMissionTaskCount = 10
+const dailyReviewTaskCount = 3
+const dailyNewTaskCount = 7
+const dailyListeningTaskLimit = 2
+const dailySpellingTaskLimit = 1
+
+const listeningChoiceThemes = new Set(['food', 'animals', 'toys', 'school', 'body', 'nature', 'home', 'clothes'])
+
+export const isListeningChoiceItem = (item?: LearningItem) =>
+  Boolean(item && item.type === 'word' && listeningChoiceThemes.has(item.theme))
+
+const skillForMissionItem = (itemId: string, index: number, items: LearningItem[]): MissionTask['skill'] => {
+  const item = items.find((candidate) => candidate.id === itemId)
+  return index % 3 === 0 && isListeningChoiceItem(item) ? 'listen' : 'speak'
+}
+
+const balanceTaskSkillLimits = (tasks: MissionTask[], items: LearningItem[]) => {
+  let listeningCount = 0
+  let spellingCount = 0
+
+  return tasks.map((task, index) => {
+    const item = items.find((candidate) => candidate.id === task.itemId)
+    let skill = skillForMissionItem(task.itemId, index, items)
+
+    if (skill === 'listen') {
+      listeningCount += 1
+      if (listeningCount > dailyListeningTaskLimit) skill = 'speak'
+    }
+
+    if (skill !== 'listen' && spellingCount < dailySpellingTaskLimit && item?.type === 'word') {
+      skill = 'spell'
+    }
+
+    if (skill === 'spell') {
+      spellingCount += 1
+      if (spellingCount > dailySpellingTaskLimit || item?.type !== 'word') skill = 'speak'
+    }
+
+    return {
+      ...task,
+      skill,
+    }
+  })
+}
+
 const daysBetween = (left: string, right: string) => {
   const dayMs = 24 * 60 * 60 * 1000
   return Math.floor((new Date(left).getTime() - new Date(right).getTime()) / dayMs)
@@ -58,19 +103,85 @@ const getPreviousMission = (state: GameState) =>
     .filter((mission) => mission.date < todayKey())
     .sort((a, b) => b.date.localeCompare(a.date))[0]
 
-export const balanceMissionSkills = (mission: DailyMission): DailyMission => {
-  if (mission.tasks.some((task) => task.skill === 'listen')) return mission
+const getPreviousDayOneStarIds = (state: GameState) => {
+  const previous = getPreviousMission(state)
+  if (!previous) return []
+
+  return unique(
+    previous.tasks
+      .filter((task) => task.completed && task.stars === 1)
+      .map((task) => task.itemId),
+  )
+}
+
+export const balanceMissionSkills = (mission: DailyMission, items: LearningItem[] = mergeCurriculum([])): DailyMission => {
+  const hasInvalidListenTask = mission.tasks.some((task) =>
+    task.skill === 'listen' && !isListeningChoiceItem(items.find((item) => item.id === task.itemId)),
+  )
+  const listeningCount = mission.tasks.filter((task) => task.skill === 'listen').length
+  const spellingCount = mission.tasks.filter((task) => task.skill === 'spell').length
+  const hasInvalidSpellTask = mission.tasks.some((task) =>
+    task.skill === 'spell' && items.find((item) => item.id === task.itemId)?.type !== 'word',
+  )
+  const needsBalancing = hasInvalidListenTask
+    || hasInvalidSpellTask
+    || listeningCount > dailyListeningTaskLimit
+    || spellingCount > dailySpellingTaskLimit
+    || spellingCount === 0
+
+  if (mission.tasks.some((task) => task.skill === 'listen') && !needsBalancing) return mission
 
   return {
     ...mission,
-    tasks: mission.tasks.map((task, index) => {
-      const skill = index % 3 === 0 ? 'listen' : 'speak'
-      return {
-        ...task,
-        skill,
-        id: `${mission.date}-${task.itemId}-${skill}`,
-      }
-    }),
+    tasks: balanceTaskSkillLimits(mission.tasks, items).map((task) => ({
+      ...task,
+      id: `${mission.date}-${task.itemId}-${task.skill}`,
+    })),
+  }
+}
+
+const createMissionTasks = (itemIds: string[], date: string, items: LearningItem[]): MissionTask[] =>
+  balanceTaskSkillLimits(itemIds.slice(0, dailyMissionTaskCount).map((itemId, index) => ({
+    id: `${date}-${itemId}-${index}`,
+    itemId,
+    skill: 'speak',
+    completed: false,
+    stars: 0,
+  })), items).map((task) => {
+    return {
+      ...task,
+      id: `${date}-${task.itemId}-${task.skill}`,
+    }
+  })
+
+const ensureMissionTaskCount = (mission: DailyMission, state: GameState, date: string): DailyMission => {
+    const recommendedCurriculum = getRecommendedCurriculum(state, date)
+    const balancedMission = balanceMissionSkills(mission, recommendedCurriculum)
+  if (balancedMission.tasks.length >= dailyMissionTaskCount) return balancedMission
+
+  const selectedIds = new Set(balancedMission.tasks.map((task) => task.itemId))
+    const supplementIds = recommendedCurriculum
+    .map((item) => item.id)
+    .filter((itemId) => !selectedIds.has(itemId))
+    .slice(0, dailyMissionTaskCount - balancedMission.tasks.length)
+  if (!supplementIds.length) return balancedMission
+
+  return {
+    ...balancedMission,
+    tasks: balanceTaskSkillLimits([
+      ...balancedMission.tasks,
+      ...supplementIds.map((itemId) => ({
+        id: `${date}-${itemId}-speak`,
+        itemId,
+        skill: 'speak' as const,
+        completed: false,
+        stars: 0,
+      })),
+    ], recommendedCurriculum).map((task) => ({
+      ...task,
+      id: `${date}-${task.itemId}-${task.skill}`,
+    })),
+    completed: false,
   }
 }
 
@@ -111,41 +222,36 @@ export const createInitialState = (): GameState => ({
 
 export const generateDailyMission = (state: GameState, date = todayKey()): DailyMission => {
   const existing = state.missions.find((mission) => mission.date === date)
-  if (existing) return balanceMissionSkills(existing)
+  if (existing) return ensureMissionTaskCount(existing, state, date)
 
   const previous = getPreviousMission(state)
   const unfinishedIds = previous
     ? previous.tasks.filter((task) => !task.completed).map((task) => task.itemId)
     : []
+  const previousDayOneStarIds = getPreviousDayOneStarIds(state)
   const weakIds = getWeakItemIds(state).filter(
     (id) => getMasteryScore(state.mastery[id]) < 72,
   )
   const recommendedCurriculum = getRecommendedCurriculum(state, date)
+  const reviewIds = unique([
+    ...previousDayOneStarIds,
+    ...unfinishedIds,
+    ...weakIds,
+  ]).slice(0, dailyReviewTaskCount)
   const newIds = seededSort(
-    recommendedCurriculum.filter((item) => !state.mastery[item.id] && !unfinishedIds.includes(item.id)),
+    recommendedCurriculum.filter(
+      (item) => !state.mastery[item.id] && !reviewIds.includes(item.id),
+    ),
     date,
-  ).map((item) => item.id)
-  const reviewIds = seededSort(
-    recommendedCurriculum.filter((item) => state.mastery[item.id] && !weakIds.includes(item.id)),
+  ).map((item) => item.id).slice(0, dailyNewTaskCount)
+  const fallbackIds = seededSort(
+    recommendedCurriculum.filter((item) => !reviewIds.includes(item.id) && !newIds.includes(item.id)),
     date,
   ).map((item) => item.id)
 
-  const targetCount = 10
-  const selectedIds = unique([...unfinishedIds, ...weakIds, ...newIds, ...reviewIds]).slice(
-    0,
-    targetCount,
-  )
+  const selectedIds = unique([...reviewIds, ...newIds, ...fallbackIds]).slice(0, dailyMissionTaskCount)
 
-  const tasks: MissionTask[] = selectedIds.map((itemId, index) => {
-    const skill = index % 3 === 0 ? 'listen' : 'speak'
-    return {
-      id: `${date}-${itemId}-${skill}`,
-      itemId,
-      skill,
-      completed: false,
-      stars: 0,
-    }
-  })
+  const tasks = createMissionTasks(selectedIds, date, recommendedCurriculum)
 
   const reward = seededSort(rewardCatalog, date)[0]
 
@@ -155,6 +261,7 @@ export const generateDailyMission = (state: GameState, date = todayKey()): Daily
     completed: false,
     rewardId: reward.id,
     lotteryClaimed: false,
+    lotteryClaimedCount: 0,
   }
 }
 

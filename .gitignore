@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# 数据目录（含数据库、备份、恢复文件，不推送到远程）
+data/
+
+# 备份目录
+public/_asset-backup-before-white-clean/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

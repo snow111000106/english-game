@@ -4,8 +4,17 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "predev": "node scripts/free-port.mjs 5173 && node scripts/free-port.mjs 6173",
+    "dev": "node scripts/dev-with-sqlite.mjs prod",
+    "predev:test": "node scripts/free-port.mjs 5174 && node scripts/free-port.mjs 6174",
+    "dev:test": "node scripts/dev-with-sqlite.mjs test",
+    "predev:prod": "node scripts/free-port.mjs 5173 && node scripts/free-port.mjs 6173",
+    "dev:prod": "node scripts/dev-with-sqlite.mjs prod",
+    "db:prod": "node scripts/sqlite-api.mjs prod",
+    "db:test": "node scripts/sqlite-api.mjs test",
     "build": "tsc -b && vite build",
+    "build:test": "vite build --mode test",
+    "build:prod": "vite build --mode production",
     "lint": "oxlint",
     "preview": "vite preview"
   },

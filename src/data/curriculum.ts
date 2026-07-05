@@ -412,22 +412,6 @@ export const rewardCatalog: Reward[] = [
     description: '给伙伴补充快乐能量。',
     owned: 0,
   },
-  {
-    id: 'star-sticker',
-    kind: 'sticker',
-    name: '星星贴纸',
-    emoji: '⭐',
-    description: '贴在小屋墙上的亮晶晶奖励。',
-    owned: 0,
-  },
-  {
-    id: 'berry-lamp',
-    kind: 'decor',
-    name: '草莓小夜灯',
-    emoji: '🍓',
-    description: '让学习小屋变得暖暖的。',
-    owned: 0,
-  },
 ]
 
 export const getItemById = (id: string, source: LearningItem[] = curriculum) => source.find((item) => item.id === id)

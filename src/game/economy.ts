@@ -1,15 +1,22 @@
 import { characterThresholds, inventoryCatalog, lotteryPrizes, recipes } from '../data/economy'
 import type { DailyMission, GameState, GardenPlot, GardenPlotKind, InventoryKey, LotteryPrize, Recipe } from '../types'
 
+const defaultFieldCareRequirement = 2
+const getFieldCareRequirement = (kind: GardenPlotKind) => (kind === 'teaLeaf' ? 1 : defaultFieldCareRequirement)
+
+const lotteryMilkPityThreshold = 10
+
 export const createInitialInventory = (): Record<InventoryKey, number> => ({
-  sunlight: 0,
-  raindrop: 0,
-  chickenFeed: 0,
+  sunlight: 1,
+  raindrop: 1,
+  chickenFeed: 1,
   strawberrySeed: 1,
   wheatSeed: 1,
+  teaLeafSeed: 1,
   chicken: 1,
   strawberry: 0,
   wheat: 0,
+  teaLeaf: 0,
   flour: 0,
   egg: 0,
   pearl: 0,
@@ -28,6 +35,7 @@ export const createInitialGardenPlots = (): GardenPlot[] =>
     raindrop: 0,
     fed: 0,
     chickens: 0,
+    chickenEggs: [],
   }))
 
 const addInventory = (
@@ -47,6 +55,12 @@ const spendInputs = (inventory: Record<InventoryKey, number>, inputs: Recipe['in
     (next, [key, amount]) => addInventory(next, key as InventoryKey, -(amount ?? 0)),
     inventory,
   )
+
+const normalizeChickenEggs = (plot: GardenPlot) => {
+  const chickens = Math.min(Math.max(plot.chickens ?? (plot.kind === 'chicken' ? 1 : 0), 0), 3)
+  const existing = Array.isArray(plot.chickenEggs) ? plot.chickenEggs.slice(0, chickens) : []
+  return Array.from({ length: chickens }).map((_, index) => Math.min(Math.max(existing[index] ?? 0, 0), 3))
+}
 
 export const migrateInventory = (state: Partial<GameState>): Record<InventoryKey, number> => {
   const initial = createInitialInventory()
@@ -110,15 +124,37 @@ const pickLotteryPrize = (seed: string): LotteryPrize => {
   return lotteryPrizes[0]
 }
 
-export const drawLottery = (state: GameState, mission: DailyMission): GameState => {
-  if (!mission.completed) {
-    return state
+const getDrawsSinceLastMilk = (state: GameState) => {
+  const milkIndex = state.lotteryHistory.findIndex((record) => record.key === 'milk')
+  return milkIndex === -1 ? state.lotteryHistory.length : milkIndex
+}
+
+export const getDailyLotteryStats = (mission: DailyMission) => {
+  const earnedStars = mission.tasks.reduce((sum, task) => sum + task.stars, 0)
+  const availableDraws = Math.min(Math.floor(earnedStars / 10), 3)
+  const claimedDraws = mission.lotteryClaimedCount ?? (mission.lotteryClaimed ? 1 : 0)
+  const remainingDraws = Math.max(availableDraws - claimedDraws, 0)
+  const nextTargetStars = availableDraws >= 3 ? null : (availableDraws + 1) * 10
+
+  return {
+    earnedStars,
+    availableDraws,
+    claimedDraws,
+    remainingDraws,
+    nextTargetStars,
   }
-  if (mission.lotteryClaimed) {
+}
+
+export const drawLottery = (state: GameState, mission: DailyMission): GameState => {
+  const lotteryStats = getDailyLotteryStats(mission)
+  if (lotteryStats.remainingDraws <= 0) {
     return state
   }
 
-  const prize = pickLotteryPrize(`${mission.date}-${state.results.length}-${state.totalStars}`)
+  const guaranteedMilk = getDrawsSinceLastMilk(state) >= lotteryMilkPityThreshold - 1
+  const prize = guaranteedMilk
+    ? { key: 'milk' as const, amount: 1, weight: 0 }
+    : pickLotteryPrize(`${mission.date}-${lotteryStats.claimedDraws}-${state.results.length}-${state.totalStars}`)
   const createdAt = new Date().toISOString()
   let inventory = state.inventory
   let starBank = state.starBank
@@ -140,11 +176,18 @@ export const drawLottery = (state: GameState, mission: DailyMission): GameState 
     amount = prize.stars
   }
 
-  const nextMission = { ...mission, lotteryClaimed: true }
+  const nextClaimedDraws = lotteryStats.claimedDraws + 1
+  const nextMission = {
+    ...mission,
+    lotteryClaimed: nextClaimedDraws >= lotteryStats.availableDraws,
+    lotteryClaimedCount: nextClaimedDraws,
+  }
 
   return {
     ...state,
-    missions: state.missions.map((item) => (item.date === mission.date ? nextMission : item)),
+    missions: state.missions.some((item) => item.date === mission.date)
+      ? state.missions.map((item) => (item.date === mission.date ? nextMission : item))
+      : [...state.missions, nextMission],
     inventory,
     ingredients: syncLegacyIngredients(inventory),
     starBank,
@@ -159,21 +202,29 @@ export const drawLottery = (state: GameState, mission: DailyMission): GameState 
         amount,
         stars: prize.stars,
         createdAt,
+        guaranteed: guaranteedMilk,
       },
       ...state.lotteryHistory,
     ].slice(0, 30),
   }
 }
 
-export const plantInPlot = (state: GameState, plotId: string, kind: 'strawberry' | 'wheat' | 'chicken') => {
-  const seedKey: InventoryKey = kind === 'strawberry' ? 'strawberrySeed' : kind === 'wheat' ? 'wheatSeed' : 'chicken'
+export const plantInPlot = (state: GameState, plotId: string, kind: 'strawberry' | 'wheat' | 'teaLeaf' | 'chicken') => {
+  const seedKey: InventoryKey = kind === 'strawberry'
+    ? 'strawberrySeed'
+    : kind === 'wheat'
+      ? 'wheatSeed'
+      : kind === 'teaLeaf'
+        ? 'teaLeafSeed'
+        : 'chicken'
   if (state.inventory[seedKey] <= 0) {
     return state
   }
 
   const plot = state.gardenPlots.find((item) => item.id === plotId)
   if (!plot) return state
-  if (kind === 'chicken' && plot.kind === 'chicken' && (plot.chickens ?? 1) >= 3) {
+  const activeChickenEggs = normalizeChickenEggs(plot).filter((eggCount) => eggCount < 3)
+  if (kind === 'chicken' && plot.kind === 'chicken' && activeChickenEggs.length >= 3) {
     return state
   }
   if (kind !== 'chicken' && plot.kind !== 'empty') return state
@@ -193,7 +244,8 @@ export const plantInPlot = (state: GameState, plotId: string, kind: 'strawberry'
           sunlight: 0,
           raindrop: 0,
           fed: kind === 'chicken' ? item.fed : 0,
-          chickens: kind === 'chicken' ? (item.chickens ?? 0) + 1 : 0,
+          chickens: kind === 'chicken' ? Math.min(normalizeChickenEggs(item).filter((eggCount) => eggCount < 3).length + 1, 3) : 0,
+          chickenEggs: kind === 'chicken' ? [...normalizeChickenEggs(item).filter((eggCount) => eggCount < 3), 0].slice(0, 3) : [],
         }
         : item,
     ),
@@ -204,9 +256,15 @@ export const careForPlot = (state: GameState, plotId: string, care: 'sunlight' |
   const plot = state.gardenPlots.find((item) => item.id === plotId)
   if (!plot || plot.kind === 'empty' || plot.ready) return state
 
+  const chickenEggs = plot.kind === 'chicken' ? normalizeChickenEggs(plot) : []
+  if (plot.kind === 'chicken' && chickenEggs.every((eggCount) => eggCount >= 3)) return state
+
   const neededKey: InventoryKey = plot.kind === 'chicken' ? 'chickenFeed' : care
   if (plot.kind === 'chicken' && care !== 'chickenFeed') return state
   if (plot.kind !== 'chicken' && care === 'chickenFeed') return state
+  const fieldCareRequirement = getFieldCareRequirement(plot.kind)
+  if (plot.kind !== 'chicken' && care === 'sunlight' && plot.sunlight >= fieldCareRequirement) return state
+  if (plot.kind !== 'chicken' && care === 'raindrop' && plot.raindrop >= fieldCareRequirement) return state
   if (state.inventory[neededKey] <= 0) {
     return state
   }
@@ -214,6 +272,20 @@ export const careForPlot = (state: GameState, plotId: string, care: 'sunlight' |
   const inventory = addInventory(state.inventory, neededKey, -1)
   const gardenPlots = state.gardenPlots.map((item) => {
     if (item.id !== plotId) return item
+    if (item.kind === 'chicken') {
+      const nextEggs = normalizeChickenEggs(item)
+      const nextChickenIndex = nextEggs.findIndex((eggCount) => eggCount < 3)
+      if (nextChickenIndex < 0) return item
+      nextEggs[nextChickenIndex] += 1
+      return {
+        ...item,
+        ready: true,
+        fed: item.fed + 1,
+        chickens: nextEggs.length,
+        chickenEggs: nextEggs,
+      }
+    }
+
     const next = {
       ...item,
       sunlight: care === 'sunlight' ? item.sunlight + 1 : item.sunlight,
@@ -222,7 +294,7 @@ export const careForPlot = (state: GameState, plotId: string, care: 'sunlight' |
     }
     return {
       ...next,
-      ready: next.kind === 'chicken' ? next.fed >= 1 : next.sunlight >= 1 && next.raindrop >= 1,
+      ready: next.kind === 'chicken' ? next.fed >= 1 : next.sunlight >= fieldCareRequirement && next.raindrop >= fieldCareRequirement,
     }
   })
 
@@ -238,11 +310,12 @@ export const harvestPlot = (state: GameState, plotId: string) => {
   const plot = state.gardenPlots.find((item) => item.id === plotId)
   if (!plot || !plot.ready) return state
 
-  const output: InventoryKey = plot.kind === 'strawberry' ? 'strawberry' : plot.kind === 'wheat' ? 'wheat' : 'egg'
+  const output: InventoryKey = plot.kind === 'strawberry' ? 'strawberry' : plot.kind === 'wheat' ? 'wheat' : plot.kind === 'teaLeaf' ? 'teaLeaf' : 'egg'
   const inventory = addInventory(state.inventory, output, 1)
   const emptyKind: GardenPlotKind = 'empty'
-  const remainingChickens = plot.kind === 'chicken' ? Math.max(plot.chickens ?? 1, 1) : 0
-  const nextKind: GardenPlotKind = plot.kind === 'chicken' ? 'chicken' : emptyKind
+  const remainingChickenEggs = plot.kind === 'chicken' ? normalizeChickenEggs(plot).filter((eggCount) => eggCount < 3) : []
+  const remainingChickens = remainingChickenEggs.length
+  const nextKind: GardenPlotKind = plot.kind === 'chicken' && remainingChickens > 0 ? 'chicken' : emptyKind
 
   return {
     ...state,
@@ -258,6 +331,7 @@ export const harvestPlot = (state: GameState, plotId: string) => {
           raindrop: 0,
           fed: 0,
           chickens: remainingChickens,
+          chickenEggs: remainingChickenEggs,
         }
         : item,
     ),

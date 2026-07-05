@@ -5,6 +5,73 @@
   position: relative;
 }
 
+.login-shell {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.login-card {
+  max-width: 560px;
+  width: 100%;
+}
+
+.login-form {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.login-form label {
+  color: #7b3155;
+  display: grid;
+  font-size: 1.08rem;
+  font-weight: 900;
+  gap: 8px;
+}
+
+.login-form input {
+  background: #fff8fc;
+  border: 3px solid #ffc9df;
+  border-radius: 22px;
+  color: #70304f;
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 800;
+  min-height: 58px;
+  padding: 0 18px;
+  outline: none;
+}
+
+.login-form input:focus {
+  border-color: #ff6fa9;
+  box-shadow: 0 0 0 5px rgba(255, 111, 169, 0.18);
+}
+
+.login-message,
+.user-badge {
+  background: #fff2b8;
+  border: 2px solid #ffd36a;
+  border-radius: 999px;
+  color: #8b5a00;
+  display: inline-flex;
+  font-weight: 900;
+  margin: 0;
+  padding: 8px 14px;
+}
+
+.user-badge {
+  margin-top: 8px;
+}
+
+.logout-button {
+  background: #fff0f3;
+  color: #c73659;
+  box-shadow: inset 0 0 0 2px #ffb3c4;
+}
+
 .topbar,
 .hero-grid,
 .practice-layout,
@@ -507,6 +574,146 @@ button:disabled {
   font-weight: 900;
 }
 
+.listening-prompt-card {
+  align-items: center;
+  background: linear-gradient(145deg, #fff, #fff4cd);
+  border: 4px solid #ffd15c;
+  border-radius: 34px;
+  box-shadow: 0 18px 28px rgba(255, 209, 92, 0.22);
+  color: #8f4167;
+  display: grid;
+  gap: 8px;
+  margin: 18px auto;
+  max-width: 360px;
+  padding: 22px;
+}
+
+.listening-ear {
+  font-size: 4rem;
+  line-height: 1;
+}
+
+.listening-prompt-card strong {
+  font-size: 1.45rem;
+}
+
+.listening-prompt-card small,
+.hidden-answer-note {
+  color: #9a7185;
+  font-weight: 800;
+}
+
+.spelling-prompt-card,
+.spelling-input-panel {
+  background: rgba(255, 255, 255, 0.78);
+  border: 3px solid #ffd1e6;
+  border-radius: 30px;
+  margin: 14px auto;
+  max-width: 520px;
+  padding: 18px;
+}
+
+.spelling-prompt-card {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.spelling-prompt-card .word-picture {
+  margin: 0;
+}
+
+.spelling-word {
+  color: #7b3155;
+  font-size: clamp(2.2rem, 5vw, 4rem);
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.spelling-prompt-card small,
+.spelling-input-panel small {
+  color: #9a7185;
+  font-weight: 900;
+}
+
+.spelling-input-panel label {
+  color: #7b3155;
+  display: grid;
+  font-weight: 900;
+  gap: 10px;
+  margin: 14px 0;
+  text-align: left;
+}
+
+.spelling-input-panel input {
+  background: #fff8fc;
+  border: 3px solid #ffb6d5;
+  border-radius: 22px;
+  color: #70304f;
+  font: inherit;
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  max-width: 420px;
+  width: 100%;
+  margin: 0 auto;
+  outline: none;
+  padding: 0 18px;
+  text-align: center;
+}
+
+.spelling-input-panel input:focus {
+  border-color: #ff6fa9;
+  box-shadow: 0 0 0 5px rgba(255, 111, 169, 0.18);
+}
+
+.listening-choice-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 14px auto 6px;
+  max-width: 460px;
+}
+
+.listening-choice-card {
+  align-items: center;
+  background: linear-gradient(145deg, #fff, #f4fbff);
+  border: 3px solid #ffd1e6;
+  border-radius: 28px;
+  box-shadow: 0 12px 20px rgba(255, 111, 169, 0.14);
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  min-height: 116px;
+  padding: 14px;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.listening-choice-card:hover:not(:disabled) {
+  border-color: #ff8fbd;
+  box-shadow: 0 18px 28px rgba(255, 111, 169, 0.22);
+  transform: translateY(-3px);
+}
+
+.listening-choice-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.listening-choice-card .word-picture {
+  margin: 0;
+}
+
+.hidden-answer-note {
+  background: rgba(255, 255, 255, 0.76);
+  border: 2px dashed #ffd1e6;
+  border-radius: 18px;
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+}
+
 .voice-meter {
   align-items: end;
   display: flex;
@@ -612,6 +819,20 @@ button:disabled {
 
 .task-card .word-picture {
   grid-row: span 3;
+}
+
+.task-listen-icon {
+  align-items: center;
+  align-self: center;
+  background: linear-gradient(145deg, #fff4cd, #fff);
+  border: 3px solid #ffd15c;
+  border-radius: 24px;
+  display: inline-flex;
+  font-size: 2rem;
+  grid-row: span 3;
+  height: 58px;
+  justify-content: center;
+  width: 58px;
 }
 
 .task-card strong,
@@ -957,6 +1178,11 @@ button:disabled {
   filter: drop-shadow(0 10px 8px rgba(255, 111, 169, 0.18));
 }
 
+.ui-icon.slot-item-icon img {
+  height: 82%;
+  width: 82%;
+}
+
 .slot-lever {
   align-items: flex-start;
   background: #7b3155;
@@ -1056,6 +1282,143 @@ button:disabled {
 
 .recipe-card {
   background: linear-gradient(145deg, #fff7fb, #fff7d7);
+}
+
+.recipe-ingredients {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  border: 2px dashed #ffc9df;
+  border-radius: 22px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  margin: 12px 0;
+  min-height: 70px;
+  padding: 10px;
+}
+
+.recipe-ingredient-group {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+}
+
+.recipe-ingredient-icon {
+  height: 42px;
+  margin: 0;
+  width: 42px;
+}
+
+.crafting-stage {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.92), transparent 18%),
+    linear-gradient(135deg, #fff2b8, #ffe1ed 58%, #dff8ff);
+  border: 4px solid #fff;
+  border-radius: 32px;
+  box-shadow: inset 0 -12px 0 rgba(123, 49, 85, 0.08), 0 18px 36px rgba(255, 111, 169, 0.2);
+  margin: 18px 0 24px;
+  overflow: hidden;
+  padding: 22px;
+  text-align: center;
+}
+
+.crafting-machine {
+  align-items: center;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(160px, 1fr) 160px minmax(120px, 0.8fr);
+  margin-bottom: 14px;
+}
+
+.crafting-inputs,
+.crafting-output {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  border: 3px dashed #ff9bc4;
+  border-radius: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  min-height: 110px;
+  padding: 12px;
+}
+
+.crafting-flow-icon {
+  animation: ingredientFlow 2.2s ease-in-out infinite;
+  height: 54px;
+  margin: 0;
+  width: 54px;
+}
+
+.crafting-flow-icon:nth-child(2n) {
+  animation-delay: 0.24s;
+}
+
+.crafting-core {
+  align-items: center;
+  display: grid;
+  justify-items: center;
+  position: relative;
+}
+
+.crafting-factory-icon {
+  animation: machineShake 0.46s ease-in-out infinite;
+  filter: drop-shadow(0 14px 12px rgba(123, 49, 85, 0.16));
+  height: 132px;
+  width: 132px;
+}
+
+.crafting-gear {
+  animation: sparkle 0.9s ease-in-out infinite;
+  color: #ff9f45;
+  font-size: 1.6rem;
+  position: absolute;
+}
+
+.gear-a {
+  right: 10px;
+  top: 6px;
+}
+
+.gear-b {
+  bottom: 8px;
+  left: 12px;
+}
+
+.crafting-result-icon {
+  animation: softPulse 1.2s ease-in-out infinite;
+  height: 82px;
+  margin: 0;
+  width: 82px;
+}
+
+.crafting-progress {
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  height: 18px;
+  margin: 8px auto 12px;
+  max-width: 620px;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.crafting-progress span {
+  animation: craftingFill 10s linear forwards;
+  background: linear-gradient(90deg, #ff6fa9, #ffd15c);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  width: 0;
+}
+
+.crafting-stage strong,
+.crafting-stage small {
+  color: #7b3155;
+  display: block;
+  font-weight: 900;
 }
 
 .recipe-emoji {
@@ -1309,9 +1672,10 @@ button:disabled {
 
 .garden-field-zone {
   bottom: 72px;
-  grid-template-columns: repeat(2, 146px);
+  gap: 14px 18px;
+  grid-template-columns: repeat(2, 128px);
   left: clamp(290px, 35%, 410px);
-  width: 310px;
+  width: 274px;
 }
 
 .garden-coop-zone {
@@ -1336,6 +1700,14 @@ button:disabled {
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
+.garden-scene .plot-card.field {
+  align-self: center;
+  grid-template-rows: 70px 22px 30px;
+  justify-self: center;
+  min-height: 128px;
+  width: 128px;
+}
+
 .garden-scene .plot-card.empty {
   align-self: center;
   justify-self: center;
@@ -1354,8 +1726,8 @@ button:disabled {
   background: rgba(255, 249, 241, 0.78);
 }
 
-.garden-scene .plot-card.field.strawberry:has(.growth-step.done),
-.garden-scene .plot-card.field.wheat:has(.growth-step.done) {
+.garden-scene .plot-card.field.strawberry:has(.growth-need-icon.done),
+.garden-scene .plot-card.field.wheat:has(.growth-need-icon.done) {
   background: linear-gradient(180deg, rgba(255, 236, 198, 0.9), rgba(226, 181, 111, 0.58));
 }
 
@@ -1365,8 +1737,8 @@ button:disabled {
 }
 
 .garden-scene .plot-card.field.ready .plot-item-icon {
-  height: 92px;
-  width: 92px;
+  height: 76px;
+  width: 76px;
 }
 
 .garden-scene .plot-card.empty h3,
@@ -1416,6 +1788,10 @@ button:disabled {
   min-height: 78px;
 }
 
+.garden-scene .plot-card.field .plot-art {
+  min-height: 64px;
+}
+
 .garden-scene .plot-card h3 {
   font-size: 0.98rem;
   margin: 0;
@@ -1429,31 +1805,28 @@ button:disabled {
   min-height: 30px;
 }
 
-.plot-growth-progress {
-  background: rgba(113, 93, 50, 0.16);
-  border: 2px solid rgba(255, 255, 255, 0.8);
-  border-radius: 999px;
-  box-shadow: inset 0 2px 6px rgba(99, 73, 34, 0.14);
+.plot-growth-needs {
+  align-items: center;
   display: grid;
-  gap: 4px;
-  grid-template-columns: repeat(2, 1fr);
-  height: 18px;
-  overflow: hidden;
-  padding: 3px;
-  width: 82px;
+  gap: 3px;
+  grid-template-columns: repeat(4, 22px);
+  justify-content: center;
 }
 
-.growth-step {
-  background: rgba(255, 255, 255, 0.54);
-  border-radius: 999px;
+.growth-need-icon {
+  filter: grayscale(1);
+  height: 22px;
+  margin: 0;
+  opacity: 0.28;
+  transform: scale(0.92);
+  transition: filter 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+  width: 22px;
 }
 
-.growth-step.done.sunlight {
-  background: linear-gradient(180deg, #ffd85e, #f2a83c);
-}
-
-.growth-step.done.raindrop {
-  background: linear-gradient(180deg, #69c9ff, #3287d8);
+.growth-need-icon.done {
+  filter: none;
+  opacity: 1;
+  transform: scale(1.05);
 }
 
 .mini-status-icon {
@@ -1462,6 +1835,17 @@ button:disabled {
   height: 30px;
   margin: 0;
   width: 30px;
+}
+
+.egg-cycle-status {
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  color: #8f6a3b;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1;
+  padding: 5px 8px;
+  white-space: nowrap;
 }
 
 .status-dot {
@@ -1499,6 +1883,14 @@ button:disabled {
   border-width: 2px;
   height: 78px;
   width: 78px;
+}
+
+.field-plot-icon {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  height: 88px;
+  width: 88px;
 }
 
 .coop-with-chickens {
@@ -2063,6 +2455,155 @@ button:disabled {
   padding: 18px 28px;
 }
 
+.event-log-box {
+  background: #f8f6ff;
+  border-radius: 20px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.event-log-row {
+  align-items: center;
+  background: #fff;
+  border-radius: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.event-log-time {
+  color: #8a85a8;
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 88px;
+}
+
+.event-log-type {
+  background: #ede7ff;
+  border-radius: 10px;
+  color: #5b4d8a;
+  font-weight: 800;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.event-type-practice_stars { background: #fff3d6; color: #8a6a1a; }
+.event-type-lottery { background: #ffe0ec; color: #a04068; }
+.event-type-shop_buy { background: #d6f0ff; color: #2a6a8a; }
+.event-type-craft { background: #e0ffe6; color: #2a8a4a; }
+.event-type-harvest { background: #fff0d6; color: #8a6a2a; }
+
+.event-log-gain { color: #e0407a; font-weight: 800; }
+.event-log-spend { color: #6a6a8a; font-weight: 800; }
+.event-log-item { color: #5a4a6a; font-weight: 700; }
+.event-log-detail { color: #8a85a8; font-size: 13px; }
+
+.snapshot-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.snapshot-card {
+  background: #f8f6ff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.2s, transform 0.1s;
+}
+
+.snapshot-card:hover { transform: translateY(-2px); }
+.snapshot-card.active { border-color: #e0407a; background: #ffe7f1; }
+
+.snapshot-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.snapshot-card-header strong { font-size: 14px; }
+.snapshot-time { color: #8a85a8; font-size: 11px; }
+
+.snapshot-card-body {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #5a4a6a;
+  font-weight: 600;
+}
+
+.snapshot-card-garden {
+  font-size: 11px;
+  color: #8a85a8;
+  margin-top: 4px;
+}
+
+.snapshot-detail {
+  background: #f8f6ff;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.snapshot-detail h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.snapshot-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.snapshot-detail-grid div {
+  background: #fff;
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+.snapshot-inventory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.snapshot-inv-item {
+  background: #fff;
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5a4a6a;
+}
+
+.snapshot-garden {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.snapshot-garden-plot {
+  background: #fff;
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .file-button input {
   display: none;
 }
@@ -2495,6 +3036,27 @@ button:disabled {
   }
   66% {
     transform: translateX(2px) rotate(1deg);
+  }
+}
+
+@keyframes ingredientFlow {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translateX(-10px) scale(0.92) rotate(-3deg);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(18px) scale(1.08) rotate(4deg);
+  }
+}
+
+@keyframes craftingFill {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
   }
 }
 

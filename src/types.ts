@@ -1,4 +1,4 @@
-export type SkillType = 'listen' | 'speak'
+export type SkillType = 'listen' | 'speak' | 'spell'
 
 export type Level = 'pre-a1' | 'a1'
 
@@ -12,9 +12,11 @@ export type InventoryKey =
   | 'chickenFeed'
   | 'strawberrySeed'
   | 'wheatSeed'
+  | 'teaLeafSeed'
   | 'chicken'
   | 'strawberry'
   | 'wheat'
+  | 'teaLeaf'
   | 'flour'
   | 'egg'
   | 'pearl'
@@ -23,7 +25,7 @@ export type InventoryKey =
   | 'strawberryBoba'
   | 'eggTart'
 
-export type GardenPlotKind = 'empty' | 'strawberry' | 'wheat' | 'chicken'
+export type GardenPlotKind = 'empty' | 'strawberry' | 'wheat' | 'teaLeaf' | 'chicken'
 
 export type PracticeSource = 'daily' | 'free'
 
@@ -61,6 +63,7 @@ export interface DailyMission {
   completed: boolean
   rewardId: string
   lotteryClaimed: boolean
+  lotteryClaimedCount: number
 }
 
 export interface PracticeResult {
@@ -100,6 +103,7 @@ export interface GardenPlot {
   raindrop: number
   fed: number
   chickens?: number
+  chickenEggs?: number[]
 }
 
 export interface LotteryRecord {
@@ -111,6 +115,7 @@ export interface LotteryRecord {
   amount: number
   stars?: number
   createdAt: string
+  guaranteed?: boolean
 }
 
 export interface LotteryPrize {

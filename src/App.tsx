@@ -9,21 +9,33 @@ import {
   careForPlot,
   craftRecipe,
   drawLottery,
+  getDailyLotteryStats,
   harvestPlot,
   plantInPlot,
 } from './game/economy'
-import { balanceMissionSkills, generateDailyMission, todayKey } from './game/missionGenerator'
+import { balanceMissionSkills, createInitialState, generateDailyMission, isListeningChoiceItem, todayKey } from './game/missionGenerator'
 import { getMasteryScore, updateMastery } from './game/mastery'
 import { listenAndScore, isSpeechRecognitionSupported } from './speech/recognition'
 import { speakText, stopSpeaking } from './speech/tts'
 import {
+  clearLegacyBrowserStorage,
   exportGameState,
+  getActiveUsername,
+  getSnapshots,
+  getSnapshotDetail,
   importGameStateFile,
+  loginOrCreateAccount,
+  logoutAccount,
   loadGameState,
   resetGameState,
   saveGameState,
+  logEvent,
+  getEventLog,
+  loadCurriculumFromDb,
+  saveCurriculumToDb,
 } from './storage/db'
-import type { GameState, GardenPlot, InventoryKey, Level, MissionTask, PracticeResult, SkillType } from './types'
+import type { EventLogEntry, SnapshotSummary } from './storage/db'
+import type { GameState, GardenPlot, InventoryKey, LearningItem, Level, MissionTask, PracticeResult, SkillType } from './types'
 
 type View = 'garden' | 'practice' | 'warehouse' | 'shop' | 'lottery' | 'factory' | 'partners' | 'words' | 'parent'
 
@@ -32,6 +44,17 @@ type GardenZone = 'field' | 'coop'
 type PrizePopup = { id: string; itemKey?: InventoryKey; text: string; title?: string }
 
 type SlotResultKey = InventoryKey | 'star'
+
+type CraftAnimation = {
+  id: string
+  recipeId: string
+  recipeName: string
+  inputKeys: InventoryKey[]
+  outputKey: InventoryKey
+}
+
+const defaultFieldCareRequirement = 2
+const getFieldCareRequirement = (plotKind?: GardenPlot['kind']) => (plotKind === 'teaLeaf' ? 1 : defaultFieldCareRequirement)
 
 type PracticeStep = 'ready' | 'heard' | 'listening' | 'result'
 
@@ -56,7 +79,7 @@ const characters = [
   { id: 'orange-helper', name: '帝帝帝大王', points: 30, className: 'orange', imageSrc: '/partners/king.png' },
 ]
 
-const gardenInventoryKeys: InventoryKey[] = ['strawberrySeed', 'wheatSeed', 'sunlight', 'raindrop', 'chicken', 'chickenFeed']
+const gardenInventoryKeys: InventoryKey[] = ['strawberrySeed', 'wheatSeed', 'teaLeafSeed', 'sunlight', 'raindrop', 'chicken', 'chickenFeed']
 
 const slotPreviewKeys: InventoryKey[] = ['strawberrySeed', 'wheatSeed', 'sunlight', 'raindrop', 'chicken', 'pearl', 'tea', 'milk']
 
@@ -66,9 +89,39 @@ const isInventoryKey = (value: string): value is InventoryKey => value in invent
 
 const makeResultId = () => `result-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
+const normalizeSpelling = (text: string) => text.toLowerCase().replace(/[^a-z]/g, '')
+
+const simpleHash = (text: string) => {
+  let value = 0
+  for (let index = 0; index < text.length; index += 1) {
+    value = (value << 5) - value + text.charCodeAt(index)
+    value |= 0
+  }
+  return Math.abs(value)
+}
+
+const buildListeningChoices = (target: LearningItem | undefined, items: LearningItem[], date: string) => {
+  if (!target) return []
+  const candidates = items.filter((item) => item.id !== target.id && isListeningChoiceItem(item))
+  const sameTheme = candidates.filter((item) => item.theme === target.theme)
+  const pool = [...sameTheme, ...candidates.filter((item) => item.theme !== target.theme)]
+  const distractors = pool
+    .sort((left, right) => simpleHash(`${target.id}-${date}-${left.id}`) - simpleHash(`${target.id}-${date}-${right.id}`))
+    .slice(0, 3)
+  return [target, ...distractors]
+    .sort((left, right) => simpleHash(`${date}-${target.id}-choice-${left.id}`) - simpleHash(`${date}-${target.id}-choice-${right.id}`))
+}
+
 function App() {
   const speechRunId = useRef(0)
-  const [state, setState] = useState<GameState>(() => loadGameState())
+  const craftTimerRef = useRef<number | null>(null)
+  const loadedUserRef = useRef<string | null>(null)
+  const [currentUser, setCurrentUser] = useState(() => getActiveUsername())
+  const [state, setState] = useState<GameState>(() => createInitialState())
+  const [storageReady, setStorageReady] = useState(false)
+  const [loginName, setLoginName] = useState(currentUser)
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginMessage, setLoginMessage] = useState('')
   const [view, setView] = useState<View>('garden')
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
   const [listening, setListening] = useState(false)
@@ -77,12 +130,19 @@ function App() {
   const [prizeBurst, setPrizeBurst] = useState<PrizePopup | null>(null)
   const [slotRolling, setSlotRolling] = useState(false)
   const [slotResult, setSlotResult] = useState<SlotResultKey[] | null>(null)
+  const [craftAnimation, setCraftAnimation] = useState<CraftAnimation | null>(null)
   const [selectedWordId, setSelectedWordId] = useState(curriculum[0]?.id ?? '')
   const [wordThemeFilter, setWordThemeFilter] = useState('all')
   const [wordSearch, setWordSearch] = useState('')
   const [practiceStep, setPracticeStep] = useState<PracticeStep>('ready')
   const [practiceFeedback, setPracticeFeedback] = useState<PracticeFeedback>(null)
+  const [eventLog, setEventLog] = useState<EventLogEntry[]>([])
+  const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([])
+  const [snapshotDetail, setSnapshotDetail] = useState<Record<string, unknown> | null>(null)
+  const [snapshotDetailDate, setSnapshotDetailDate] = useState<string | null>(null)
   const [speaking, setSpeaking] = useState(false)
+  const [listeningAttempts, setListeningAttempts] = useState<Record<string, number>>({})
+  const [spellingInput, setSpellingInput] = useState('')
 
   const activeCurriculum = useMemo(() => mergeCurriculum(state.customCurriculum), [state.customCurriculum])
   const todayMission = useMemo(() => generateDailyMission(state), [state])
@@ -91,6 +151,31 @@ function App() {
   const activeTaskIndex = todayMission.tasks.findIndex((task) => task.id === activeTask?.id)
 
   useEffect(() => {
+    clearLegacyBrowserStorage()
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setStorageReady(false)
+    loadedUserRef.current = null
+
+    void loadGameState(currentUser).then((nextState) => {
+      if (!cancelled) {
+        setState(nextState)
+        setStorageReady(true)
+        loadedUserRef.current = currentUser
+        void getEventLog(currentUser).then((logs) => { if (!cancelled) setEventLog(logs) })
+        void getSnapshots(currentUser).then((snaps) => { if (!cancelled) setSnapshots(snaps) })
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser])
+
+  useEffect(() => {
+    if (!storageReady || !currentUser) return
     const hasTodayMission = state.missions.some((mission) => mission.date === todayKey())
     if (!hasTodayMission) {
       setState((current) => {
@@ -106,23 +191,52 @@ function App() {
         }
       })
     }
-  }, [state.missions])
+  }, [state.missions, storageReady, currentUser])
 
   useEffect(() => {
+    if (!storageReady || !currentUser) return
     setState((current) => {
       let changed = false
       const missions = current.missions.map((mission) => {
-        const balanced = balanceMissionSkills(mission)
+        const balanced = balanceMissionSkills(mission, activeCurriculum)
         if (balanced !== mission) changed = true
         return balanced
       })
       return changed ? { ...current, missions } : current
     })
-  }, [])
+  }, [activeCurriculum, storageReady, currentUser])
 
   useEffect(() => {
-    saveGameState(state)
-  }, [state])
+    if (!currentUser || !storageReady) return
+    if (loadedUserRef.current !== currentUser) return
+    void saveGameState(state, currentUser)
+  }, [state, currentUser, storageReady])
+
+  // 启动时把内置词库同步到数据库（只执行一次）
+  const [curriculumSynced, setCurriculumSynced] = useState(false)
+  useEffect(() => {
+    if (curriculumSynced) return
+    void loadCurriculumFromDb().then((dbItems) => {
+      const dbIds = new Set(dbItems.map((item) => item.id))
+      const missing = curriculum.filter((item) => !dbIds.has(item.id))
+      if (missing.length) {
+        void saveCurriculumToDb(missing)
+      }
+      setCurriculumSynced(true)
+    })
+  }, [curriculumSynced])
+
+  // 自定义词库变更时同步到数据库
+  useEffect(() => {
+    if (!curriculumSynced || !storageReady) return
+    if (state.customCurriculum.length) {
+      void saveCurriculumToDb(state.customCurriculum)
+    }
+  }, [state.customCurriculum, curriculumSynced, storageReady])
+
+  useEffect(() => () => {
+    if (craftTimerRef.current) window.clearTimeout(craftTimerRef.current)
+  }, [])
 
   const stopPracticeAudio = () => {
     speechRunId.current += 1
@@ -143,9 +257,93 @@ function App() {
     }
   }
 
+  const speakPracticeSequence = async (parts: Array<{ text: string; lang: 'en-US' | 'zh-CN' }>) => {
+    const runId = speechRunId.current + 1
+    speechRunId.current = runId
+    setSpeaking(true)
+    try {
+      for (const part of parts) {
+        if (speechRunId.current !== runId) return false
+        const ok = await speakText(part.text, part.lang)
+        if (!ok) {
+          setFeedback('当前浏览器暂时不能朗读，请换 Chrome 或 Edge 试试。')
+          return false
+        }
+      }
+      return true
+    } finally {
+      if (speechRunId.current === runId) setSpeaking(false)
+    }
+  }
+
+  const speakPracticeItem = (item: LearningItem) => speakPracticeSequence([
+    { text: item.text, lang: 'en-US' },
+    { text: item.meaning, lang: 'zh-CN' },
+  ])
+
   const handleViewChange = (nextView: View) => {
     stopPracticeAudio()
     setView(nextView)
+  }
+
+  const handleLogin = async () => {
+    const result = await loginOrCreateAccount(loginName, loginPassword)
+    setLoginMessage(result.message)
+    if (!result.ok || !result.username) return
+
+    setCurrentUser(result.username)
+    setLoginName(result.username)
+    setLoginPassword('')
+    setActiveTaskId(null)
+    setPracticeStep('ready')
+    setPracticeFeedback(null)
+    setListeningAttempts({})
+    setSpellingInput('')
+    setFeedback('')
+    setView('garden')
+  }
+
+  const handleLogout = () => {
+    stopPracticeAudio()
+    logoutAccount()
+    setCurrentUser('')
+    setStorageReady(false)
+    setLoginName('')
+    setLoginPassword('')
+    setLoginMessage('已退出登录。')
+    setView('garden')
+    setActiveTaskId(null)
+    setPracticeStep('ready')
+    setPracticeFeedback(null)
+    setListeningAttempts({})
+    setSpellingInput('')
+  }
+
+  const finishCraftAnimation = (animation: CraftAnimation, beforeUnlocked: Set<string>) => {
+    const recipe = recipes.find((item) => item.id === animation.recipeId)
+    if (!recipe) return
+
+    setState((current) => {
+      if (!canCraftRecipe(current, recipe)) return current
+      return craftRecipe(current, recipe.id)
+    })
+    setCraftAnimation((current) => (current?.id === animation.id ? null : current))
+    showPrizePopup(recipe.output, `${recipe.name} ×${recipe.outputAmount}`, '制作成功！')
+    void logEvent({
+      type: 'craft',
+      refId: recipe.id,
+      itemKey: recipe.output,
+      itemAmount: recipe.outputAmount,
+      detail: `制作 ${recipe.name}`,
+    })
+
+    window.setTimeout(() => {
+      setState((current) => {
+        const newCharacters = characters.filter((character) => !beforeUnlocked.has(character.id) && current.unlockedCharacters.includes(character.id))
+        if (newCharacters[0]) showPrizePopup(undefined, `新伙伴：${newCharacters[0].name}`, '伙伴解锁！')
+        return current
+      })
+    }, 650)
   }
 
   const celebrateStars = (stars: number, text: string, silent = false) => {
@@ -230,6 +428,12 @@ function App() {
 
     if (earnedStars > 0) {
       celebrateStars(earnedStars, item.text, stars >= 3)
+      void logEvent({
+        type: 'practice_stars',
+        refId: result.id,
+        deltaStars: earnedStars,
+        detail: `${task.skill}/${item.text} ★${stars}`,
+      })
     } else if (stars < 3) {
       speakPraiseForStars(stars)
     }
@@ -277,12 +481,13 @@ function App() {
 
   const handleLottery = () => {
     const mission = state.missions.find((item) => item.date === todayMission.date) ?? todayMission
-    if (!mission.completed) {
-      setFeedback('先完成今天 10 个英语任务，再来抽奖。')
+    const lotteryStats = getDailyLotteryStats(mission)
+    if (lotteryStats.availableDraws <= 0) {
+      setFeedback('当天获得 10 个星星可以抽奖 1 次，继续练习攒星星吧。')
       return
     }
-    if (mission.lotteryClaimed || slotRolling) {
-      setFeedback('今天已经抽过奖啦，明天再来。')
+    if (lotteryStats.remainingDraws <= 0 || slotRolling) {
+      setFeedback(lotteryStats.availableDraws >= 3 ? '今天 3 次抽奖已经用完啦，明天再来。' : `今天已抽 ${lotteryStats.claimedDraws} 次，再到 ${lotteryStats.nextTargetStars} 星可多抽 1 次。`)
       return
     }
 
@@ -296,8 +501,20 @@ function App() {
       if (prize && next !== state) {
         const prizeKey = prize.key ?? 'star'
         setSlotResult([prizeKey, prizeKey, prizeKey])
-        showPrizePopup(prize.key, `${prize.label} ×${prize.amount}`, '抽到啦！')
+        showPrizePopup(prize.key, `${prize.label} ×${prize.amount}`, prize.guaranteed ? '牛奶保底到啦！' : '抽到啦！')
         if (prize.stars) celebrateStars(prize.stars, '每日抽奖')
+        void logEvent({
+          type: 'lottery',
+          refId: prize.id,
+          deltaStars: prize.stars ?? 0,
+          itemKey: prize.key,
+          itemAmount: prize.amount,
+          detail: prize.guaranteed ? '10抽保底' : '抽奖',
+        })
+        const nextMission = next.missions.find((item) => item.date === mission.date) ?? mission
+        const nextLotteryStats = getDailyLotteryStats(nextMission)
+        const guaranteedHint = prize.guaranteed ? ' 已触发 10 抽牛奶保底。' : ''
+        setFeedback(nextLotteryStats.remainingDraws > 0 ? `还可以再抽 ${nextLotteryStats.remainingDraws} 次。${guaranteedHint}` : `今天可用抽奖次数已用完。${guaranteedHint}`)
       }
     }, 1300)
   }
@@ -307,27 +524,37 @@ function App() {
     if (!item) return
     setPracticeFeedback(null)
     setPracticeStep('ready')
-    setFeedback(task.skill === 'listen' ? `认真听：${item.text}。听完后点击“我听懂了”。` : `正在播放：${item.text}。听完后再点击“我来说英文”。`)
-    const ok = await speakPracticeText(item.text)
+    setFeedback(task.skill === 'listen' ? '认真听英文，听完后选择正确图案。' : task.skill === 'spell' ? `先看清每个字母，再跟读：${item.text}。` : `正在播放：${item.text}。听完后再点击“我来说英文”。`)
+    const ok = task.skill === 'listen' ? await speakPracticeText(item.text) : await speakPracticeItem(item)
     if (!ok) return
     setPracticeStep('heard')
-    setFeedback(task.skill === 'listen' ? `听完啦：${item.text}。如果听懂了，就点击“我听懂了”。` : `听完啦：${item.text}。现在可以点击“我来说英文”。`)
+    setFeedback(task.skill === 'listen' ? '听完啦，请选择你听到的图案。' : task.skill === 'spell' ? `照着上面的单词，把完整字母打出来：${item.text}` : `听完啦：${item.text}。现在可以点击“我来说英文”。`)
   }
 
-  const handleConfirmListenTask = async (task: MissionTask) => {
+  const handleListeningChoice = (task: MissionTask, choiceId: string) => {
     const item = getItemById(task.itemId, activeCurriculum)
     if (!item) return
-    completeTask(task, 3, 100, '已听懂')
+
+    const attemptsUsed = (listeningAttempts[task.id] ?? 0) + 1
+    setListeningAttempts((current) => ({ ...current, [task.id]: attemptsUsed }))
+
+    if (choiceId !== item.id) {
+      setPracticeStep('heard')
+      setFeedback('还不是这个图案，再听一遍重新选。')
+      return
+    }
+
+    const stars = attemptsUsed === 1 ? 3 : attemptsUsed === 2 ? 2 : 1
+    const score = stars === 3 ? 100 : stars === 2 ? 78 : 60
+    completeTask(task, stars, score, `选图 ${attemptsUsed} 次`)
     setPracticeStep('result')
     setPracticeFeedback({
       id: makeResultId(),
-      stars: 3,
-      score: 100,
-      transcript: '已听懂',
-      message: '听力完成！',
+      stars,
+      score,
+      message: attemptsUsed === 1 ? '一次就选对啦！' : `第 ${attemptsUsed} 次选对啦！`,
     })
-    setFeedback(`听力完成！再听一个完整句子：${item.prompt}`)
-    await speakPracticeText(item.prompt)
+    setFeedback(`选对啦！${attemptsUsed === 1 ? '一次选对，获得 3 颗星！' : `第 ${attemptsUsed} 次选对，获得 ${stars} 颗星。`}`)
   }
 
   const handleSpeakPractice = async (task: MissionTask) => {
@@ -351,9 +578,9 @@ function App() {
         message: score.message,
       })
       if (score.stars >= 3) {
-        setFeedback(`三颗星！现在听一个完整句子：${item.prompt}`)
+        setFeedback(item.type === 'phrase' ? `三颗星！再听一遍短句：${item.text}` : `三颗星！现在听一个完整句子：${item.prompt}`)
         window.setTimeout(() => {
-          void speakPracticeText(item.prompt)
+          void (item.type === 'phrase' ? speakPracticeItem(item) : speakPracticeText(item.prompt))
         }, 450)
       } else {
         setFeedback(`${score.message} 我听到：${score.transcript || '—'}，得分 ${score.score}`)
@@ -366,11 +593,42 @@ function App() {
     }
   }
 
+  const handleSpellPractice = (task: MissionTask) => {
+    const item = getItemById(task.itemId, activeCurriculum)
+    if (!item) return
+
+    const target = normalizeSpelling(item.text)
+    const typed = normalizeSpelling(spellingInput)
+    const correctLetters = typed.split('').filter((letter, index) => letter === target[index]).length
+    const isExact = typed === target
+    const score = target.length ? Math.round((correctLetters / target.length) * 100) : 0
+    const stars = isExact ? 3 : score >= 80 ? 2 : score >= 55 ? 1 : 0
+
+    if (stars <= 0) {
+      setPracticeStep('heard')
+      setPracticeFeedback(null)
+      setFeedback(`再看一眼单词：${item.text}。你输入的是：${spellingInput || '—'}。`)
+      return
+    }
+
+    completeTask(task, stars, score, spellingInput)
+    setPracticeStep('result')
+    setPracticeFeedback({
+      id: makeResultId(),
+      stars,
+      score,
+      transcript: spellingInput,
+      message: isExact ? '每个字母都打对啦！' : `打对了 ${correctLetters}/${target.length} 个字母。`,
+    })
+    setFeedback(isExact ? '拼写正确，知道这个单词由哪些字母组成啦！' : `接近啦，获得 ${stars} 颗星。正确拼写是：${item.text}`)
+  }
+
   const runTask = (task: MissionTask) => {
     setActiveTaskId(task.id)
     if (practiceStep === 'ready') return
-    if (task.skill === 'listen') {
-      void handleConfirmListenTask(task)
+    if (task.skill === 'listen') return
+    if (task.skill === 'spell') {
+      handleSpellPractice(task)
       return
     }
     void handleSpeakPractice(task)
@@ -381,6 +639,8 @@ function App() {
     setActiveTaskId(taskId)
     setPracticeStep('ready')
     setPracticeFeedback(null)
+    setListeningAttempts((current) => ({ ...current, [taskId]: 0 }))
+    setSpellingInput('')
     setFeedback('')
   }
 
@@ -401,7 +661,11 @@ function App() {
     }
 
     setState((current) => action(current))
-    setFeedback(`${meta.label} 放好啦！`)
+    const fieldCareRequirement = getFieldCareRequirement(currentPlot?.kind)
+    const careHint = (currentPlot?.kind === 'strawberry' || currentPlot?.kind === 'wheat' || currentPlot?.kind === 'teaLeaf') && (key === 'sunlight' || key === 'raindrop')
+      ? `还需要阳光 ${Math.max(0, fieldCareRequirement - (currentPlot.sunlight + (key === 'sunlight' ? 1 : 0)))} 个，雨露 ${Math.max(0, fieldCareRequirement - (currentPlot.raindrop + (key === 'raindrop' ? 1 : 0)))} 个。`
+      : ''
+    setFeedback(`${meta.label} 放好啦！${careHint}`)
   }
 
   const handleBuyShopItem = (key: InventoryKey, cost: number) => {
@@ -412,26 +676,41 @@ function App() {
     }
     setState((current) => buyShopItem(current, key, cost))
     showPrizePopup(key, `${meta.label} ×1`, '兑换成功！')
+    void logEvent({
+      type: 'shop_buy',
+      deltaStars: -cost,
+      itemKey: key,
+      itemAmount: 1,
+      detail: `兑换 ${meta.label}`,
+    })
   }
 
   const handleCraftRecipe = (recipeId: string) => {
     const recipe = recipes.find((item) => item.id === recipeId)
     if (!recipe) return
+    if (craftAnimation) {
+      setFeedback('制作台正在工作，等这一份做好再开始下一份。')
+      return
+    }
     if (!canCraftRecipe(state, recipe)) {
       setFeedback(`材料还不够：${getMissingInputs(state, recipe)}。去花园、兑换或抽奖补充一下吧。`)
       return
     }
 
     const beforeUnlocked = new Set(state.unlockedCharacters)
-    const next = craftRecipe(state, recipeId)
-    const newCharacters = characters.filter((character) => !beforeUnlocked.has(character.id) && next.unlockedCharacters.includes(character.id))
-    setState(next)
-    showPrizePopup(recipe.output, `${recipe.name} ×${recipe.outputAmount}`, '制作完成！')
-    if (newCharacters[0]) {
-      window.setTimeout(() => {
-        showPrizePopup(undefined, `新伙伴：${newCharacters[0].name}`, '伙伴解锁！')
-      }, 650)
+    const animation = {
+      id: makeResultId(),
+      recipeId,
+      recipeName: recipe.name,
+      inputKeys: expandRecipeInputs(recipe.inputs),
+      outputKey: recipe.output,
     }
+    setCraftAnimation(animation)
+    setFeedback(`${recipe.name} 制作中，请看制作台动画。`)
+    craftTimerRef.current = window.setTimeout(() => {
+      craftTimerRef.current = null
+      finishCraftAnimation(animation, beforeUnlocked)
+    }, 10000)
   }
 
   const handleHarvestPlot = (plot: GardenPlot) => {
@@ -439,6 +718,13 @@ function App() {
     const meta = getPlotMeta(plot)
     setState((current) => harvestPlot(current, plot.id))
     showPrizePopup(meta.itemKey, `${meta.output} ×1`, '收获啦！')
+    void logEvent({
+      type: 'harvest',
+      refId: plot.id,
+      itemKey: meta.itemKey,
+      itemAmount: 1,
+      detail: `收获 ${meta.output} (${plot.kind})`,
+    })
   }
 
   const handleProfileChange = (updates: Partial<GameState['learnerProfile']>) => {
@@ -471,11 +757,12 @@ function App() {
 
   const handleImportBackupFile = async (file: File) => {
     try {
-      const imported = await importGameStateFile(file)
+      const imported = await importGameStateFile(file, currentUser)
       setState(imported)
       setActiveTaskId(null)
       setPracticeStep('ready')
       setPracticeFeedback(null)
+      setSpellingInput('')
       setFeedback('备份导入成功，学习记录已经恢复。')
     } catch (error) {
       console.error('Failed to import backup', error)
@@ -496,11 +783,55 @@ function App() {
     return matchesTheme && matchesSearch
   })
   const selectedWord = filteredCurriculum.find((item) => item.id === selectedWordId) ?? filteredCurriculum[0]
-  const lotteryRemaining = Math.max(todayMission.tasks.length - completedCount, 0)
+  const listeningChoices = activeTask?.skill === 'listen' ? buildListeningChoices(activeItem, activeCurriculum, todayMission.date) : []
+  const activeListeningAttempts = activeTask ? listeningAttempts[activeTask.id] ?? 0 : 0
+  const lotteryStats = getDailyLotteryStats(todayMission)
+  const lotteryStarsToNext = lotteryStats.nextTargetStars ? Math.max(lotteryStats.nextTargetStars - lotteryStats.earnedStars, 0) : 0
   const weakWords = activeCurriculum
     .filter((item) => state.mastery[item.id])
     .sort((a, b) => getMasteryScore(state.mastery[a.id]) - getMasteryScore(state.mastery[b.id]))
     .slice(0, 5)
+
+  if (!currentUser) {
+    return (
+      <main className="login-shell">
+        <section className="login-card card">
+          <p className="eyebrow">Berry Boba English Factory</p>
+          <h1>登录草莓啵啵英语工厂</h1>
+          <p className="soft-text">输入一个简单账号和密码。新账号会自动创建，学习记录、每日任务、道具和花园都会按账号单独保存。</p>
+          <form
+            className="login-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              handleLogin()
+            }}
+          >
+            <label>
+              账号
+              <input
+                autoFocus
+                type="text"
+                value={loginName}
+                onChange={(event) => setLoginName(event.target.value)}
+                placeholder="例如：kid01"
+              />
+            </label>
+            <label>
+              密码
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                placeholder="至少 4 位"
+              />
+            </label>
+            {loginMessage && <p className="login-message" aria-live="polite">{loginMessage}</p>}
+            <button type="submit" className="primary-button">登录 / 创建账号</button>
+          </form>
+        </section>
+      </main>
+    )
+  }
 
   return (
     <main className="app-shell">
@@ -509,7 +840,8 @@ function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">Berry Boba English Factory</p>
-          <h1>草莓啵啵英语工厂</h1>
+          <h1>{currentUser} 的草莓啵啵英语工厂</h1>
+          <div className="user-badge">当前账号：{currentUser}</div>
         </div>
         <nav aria-label="主导航">
           {(['garden', 'practice', 'warehouse', 'shop', 'lottery', 'factory', 'partners', 'words', 'parent'] as View[]).map((item) => (
@@ -523,6 +855,7 @@ function App() {
               {viewLabel[item]}
             </button>
           ))}
+          <button className="nav-button logout-button" type="button" onClick={handleLogout}>退出</button>
         </nav>
       </header>
 
@@ -536,17 +869,74 @@ function App() {
                   <strong>{completedCount}/{todayMission.tasks.length} 已完成</strong>
                 </div>
                 <progress className="progress-wrap practice-progress" max="100" value={progress} aria-label={`今日练习进度 ${progress}%`} />
-                <WordPicture emoji={activeItem.emoji} theme={activeItem.theme} label={activeItem.text} animated />
+                {activeTask.skill === 'listen' ? (
+                  <div className="listening-prompt-card" aria-label="听力选图练习">
+                    <span className="listening-ear" aria-hidden="true">👂</span>
+                    <strong>听英文，选择正确图案</strong>
+                    <small>不会显示单词图标和中文，先点“听英文”再选。</small>
+                  </div>
+                ) : activeTask.skill === 'spell' ? (
+                  <div className="spelling-prompt-card" aria-label="实操拼写练习">
+                    <WordPicture emoji={activeItem.emoji} theme={activeItem.theme} label={activeItem.text} animated />
+                    <strong className="spelling-word">{activeItem.text}</strong>
+                    <small>看着上面的单词，把每个字母完整打出来。</small>
+                  </div>
+                ) : (
+                  <WordPicture emoji={activeItem.emoji} theme={activeItem.theme} label={activeItem.text} animated />
+                )}
                 <div className="practice-steps" aria-label="练习步骤">
                   <span className={practiceStep === 'ready' || speaking ? 'active' : ''}>1 听</span>
-                  <span className={practiceStep === 'heard' && !speaking ? 'active' : ''}>2 说</span>
-                  <span className={practiceStep === 'listening' ? 'active' : ''}>3 识别</span>
+                  <span className={practiceStep === 'heard' && !speaking ? 'active' : ''}>2 {activeTask.skill === 'listen' ? '选图' : activeTask.skill === 'spell' ? '打字母' : '说'}</span>
+                  <span className={practiceStep === 'listening' ? 'active' : ''}>3 {activeTask.skill === 'listen' ? '判断' : activeTask.skill === 'spell' ? '检查' : '识别'}</span>
                   <span className={practiceStep === 'result' ? 'active' : ''}>4 奖励</span>
                 </div>
-                <p className="eyebrow">{activeTask.skill === 'listen' ? '听一听，确认听懂英文' : '先听一遍，再勇敢开口'}</p>
-                <h2>{activeItem.text}</h2>
-                <p className="meaning">{activeItem.meaning}</p>
-                <p className="soft-text">{activeItem.prompt}</p>
+                <p className="eyebrow">{activeTask.skill === 'listen' ? '听一听，找图案' : activeTask.skill === 'spell' ? '实操拼写 · 认识单词里的每个字母' : '先听英文和中文，再勇敢开口'}</p>
+                {activeTask.skill === 'speak' ? (
+                  <>
+                    <h2>{activeItem.text}</h2>
+                    <p className="meaning">{activeItem.meaning}</p>
+                    <p className="soft-text">{activeItem.prompt}</p>
+                  </>
+                ) : activeTask.skill === 'spell' ? (
+                  <div className="spelling-input-panel">
+                    <h2>{activeItem.text}</h2>
+                    <p className="meaning">{activeItem.meaning}</p>
+                    <label>
+                      完整输入字母
+                      <input
+                        autoComplete="off"
+                        autoCorrect="off"
+                        disabled={speaking || listening || practiceStep === 'ready' || practiceStep === 'result'}
+                        inputMode="text"
+                        spellCheck={false}
+                        type="text"
+                        value={spellingInput}
+                        onChange={(event) => setSpellingInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && practiceStep !== 'ready' && practiceStep !== 'result') runTask(activeTask)
+                        }}
+                        placeholder={`例如：${activeItem.text}`}
+                      />
+                    </label>
+                    <small>可以看着单词慢慢打，重点是记住顺序：{activeItem.text.split('').join(' · ')}</small>
+                  </div>
+                ) : (
+                  <div className="listening-choice-grid" aria-label="听力图案选项">
+                    {listeningChoices.map((choice) => (
+                      <button
+                        className="listening-choice-card"
+                        disabled={speaking || listening || practiceStep === 'ready' || practiceStep === 'result'}
+                        key={choice.id}
+                        type="button"
+                        aria-label={`选择图案 ${choice.text}`}
+                        onClick={() => handleListeningChoice(activeTask, choice.id)}
+                      >
+                        <WordPicture emoji={choice.emoji} theme={choice.theme} label="候选图案" small />
+                      </button>
+                    ))}
+                    <small className="hidden-answer-note">已尝试 {activeListeningAttempts} 次：一次选对 3 星，第二次选对 2 星，三次以上选对 1 星。</small>
+                  </div>
+                )}
                 <div className={`voice-meter ${listening || speaking ? 'listening' : ''}`} aria-hidden="true">
                   <span />
                   <span />
@@ -565,7 +955,9 @@ function App() {
                     onClick={() => runTask(activeTask)}
                   >
                     {activeTask.skill === 'listen'
-                      ? speaking ? '听完再点' : practiceStep === 'ready' ? '先听一遍' : '✅ 我听懂了'
+                      ? practiceStep === 'result' ? '已完成' : practiceStep === 'ready' ? '先听英文' : '请选择图案'
+                      : activeTask.skill === 'spell'
+                        ? practiceStep === 'result' ? '已完成' : practiceStep === 'ready' ? '先听再打' : '⌨️ 检查字母'
                       : listening ? '正在听你说...' : speaking ? '听完再说' : practiceStep === 'ready' ? '先听再说' : '🎤 我来说英文'}
                   </button>
                   <button type="button" className="ghost-button" disabled={listening || speaking} onClick={moveToNextTask}>
@@ -581,13 +973,17 @@ function App() {
                     </div>
                     <strong>{practiceFeedback.score} 分</strong>
                     <p>{practiceFeedback.message}</p>
-                    <small>我听到：{practiceFeedback.transcript || '—'}</small>
+                    <small>{activeTask.skill === 'listen' ? `选图次数：${activeListeningAttempts || 1}` : activeTask.skill === 'spell' ? `你输入：${practiceFeedback.transcript || '—'}` : `我听到：${practiceFeedback.transcript || '—'}`}</small>
                     {practiceFeedback.stars >= 3 && (
                       <em>
-                        机器正在读完整句：{activeItem.prompt}
-                        <button type="button" disabled={speaking || listening} onClick={() => void speakPracticeText(activeItem.prompt)}>
-                          🔊 再听完整句
-                        </button>
+                        {activeTask.skill === 'speak' && (
+                          <>
+                            机器正在读{activeItem.type === 'phrase' ? '短句' : '完整句'}：{activeItem.type === 'phrase' ? activeItem.text : activeItem.prompt}
+                            <button type="button" disabled={speaking || listening} onClick={() => void (activeItem.type === 'phrase' ? speakPracticeItem(activeItem) : speakPracticeText(activeItem.prompt))}>
+                              🔊 再听一遍
+                            </button>
+                          </>
+                        )}
                       </em>
                     )}
                     <div className="result-actions">
@@ -597,7 +993,7 @@ function App() {
                     </div>
                   </div>
                 )}
-                {!isSpeechRecognitionSupported() && activeTask.skill === 'speak' && (
+                {activeTask.skill === 'speak' && !isSpeechRecognitionSupported() && (
                   <p className="warning">当前浏览器可能不支持语音识别，建议使用 Chrome 或 Edge。</p>
                 )}
                 {feedback && <p className="feedback">{feedback}</p>}
@@ -617,9 +1013,9 @@ function App() {
                   type="button"
                   onClick={() => selectTask(task.id)}
                 >
-                  {item && <WordPicture emoji={item.emoji} theme={item.theme} label={item.text} small />}
+                  {item && task.skill !== 'listen' ? <WordPicture emoji={item.emoji} theme={item.theme} label={item.text} small /> : <span className="task-listen-icon" aria-hidden="true">👂</span>}
                   <span className="task-index">{todayMission.tasks.indexOf(task) + 1}</span>
-                  <strong>{item?.text}</strong>
+                  <strong>{task.skill === 'listen' ? '听音选图' : task.skill === 'spell' ? '实操拼写' : item?.text}</strong>
                   <small>{skillLabel[task.skill]} · {task.completed ? '完成啦' : '点我练习'}</small>
                   <span className="stars">{Array.from({ length: task.stars }).map((_, index) => <UiIcon key={index} iconKey="star" label="星星" className="task-star-icon" />)}</span>
                   {task.completed && <span className="done-ribbon">✓</span>}
@@ -667,7 +1063,7 @@ function App() {
       {view === 'warehouse' && (
         <section className="card">
           <p className="eyebrow">仓库</p>
-          <h2>所有材料都在这里，也可以拖到花园</h2>
+          <h2>所有材料都在这里</h2>
           <div className="reward-grid inventory-grid">
             {Object.keys(inventoryCatalog).map((key) => (
               <DraggableInventoryItem key={key} itemKey={key as InventoryKey} count={state.inventory[key as InventoryKey]} large />
@@ -719,17 +1115,20 @@ function App() {
                 </div>
               ))}
             </div>
-            <button type="button" className="slot-lever" aria-label="抽奖拉杆" disabled={!todayMission.completed || todayMission.lotteryClaimed || slotRolling} onClick={handleLottery}>
+            <button type="button" className="slot-lever" aria-label="抽奖拉杆" disabled={lotteryStats.remainingDraws <= 0 || slotRolling} onClick={handleLottery}>
               <span />
             </button>
           </div>
           <div className="mix-panel lottery-panel">
             <div>
-              <h3>{slotRolling ? '咕噜咕噜滚动中...' : todayMission.completed ? '今天可以抽奖啦' : '先完成今日练习'}</h3>
-              <p className="soft-text">{todayMission.completed ? '可能掉落草莓种子、小麦种子、阳光、雨露、小鸡或工厂材料。' : `还差 ${lotteryRemaining} 题就能抽奖。`}</p>
+              <h3>{slotRolling ? '咕噜咕噜滚动中...' : lotteryStats.remainingDraws > 0 ? `今天还能抽 ${lotteryStats.remainingDraws} 次` : '先攒当天星星'}</h3>
+              <p className="soft-text">
+                今天任务星星 {lotteryStats.earnedStars} 个：10 星抽 1 次，20 星抽 2 次，30 星抽 3 次；已抽 {lotteryStats.claimedDraws}/{lotteryStats.availableDraws} 次，当天有效。
+                {lotteryStats.remainingDraws > 0 ? ' 可能掉落草莓种子、小麦种子、茶叶种子、阳光、雨露、小鸡或工厂材料；牛奶概率最低，但最多 10 抽必得 1 次。' : lotteryStarsToNext > 0 ? ` 还差 ${lotteryStarsToNext} 星获得下一次抽奖。` : ' 今天 3 次机会已达上限。'}
+              </p>
             </div>
-            <button type="button" className="primary-button" disabled={!todayMission.completed || todayMission.lotteryClaimed || slotRolling} onClick={handleLottery}>
-              {slotRolling ? '正在摇...' : !todayMission.completed ? '先完成今日任务' : todayMission.lotteryClaimed ? '今天已抽奖' : '摇一下'}
+            <button type="button" className="primary-button" disabled={lotteryStats.remainingDraws <= 0 || slotRolling} onClick={handleLottery}>
+              {slotRolling ? '正在摇...' : lotteryStats.remainingDraws > 0 ? `摇一下（剩 ${lotteryStats.remainingDraws} 次）` : lotteryStats.availableDraws >= 3 ? '今天已抽完' : '先获得 10 星'}
             </button>
           </div>
           <h3>最近抽到</h3>
@@ -750,16 +1149,17 @@ function App() {
         <section className="card">
           <p className="eyebrow">工厂制作台</p>
           <h2 className="section-title-with-icon"><UiIcon iconKey="factory" label="工厂" className="title-icon" />制作草莓啵啵和蛋挞来解锁伙伴</h2>
+          {craftAnimation && <CraftingStage animation={craftAnimation} />}
           <div className="recipe-grid">
             {recipes.map((recipe) => (
               <article className="recipe-card" key={recipe.id}>
                 <ItemIcon itemKey={recipe.output} />
                 <h3>{recipe.name}</h3>
                 <p>{recipe.description}</p>
-                <small>{Object.entries(recipe.inputs).map(([key, amount]) => `${inventoryCatalog[key as InventoryKey].label}×${amount}`).join(' · ')}</small>
+                <RecipeIngredientIcons inputs={recipe.inputs} />
                 {!canCraftRecipe(state, recipe) && <small className="missing-text">还差：{getMissingInputs(state, recipe)}</small>}
-                <button type="button" className="ghost-button" disabled={!canCraftRecipe(state, recipe)} onClick={() => handleCraftRecipe(recipe.id)}>
-                  {canCraftRecipe(state, recipe) ? '开始制作' : '材料不足'}
+                <button type="button" className="ghost-button" disabled={!canCraftRecipe(state, recipe) || Boolean(craftAnimation)} onClick={() => handleCraftRecipe(recipe.id)}>
+                  {craftAnimation?.recipeId === recipe.id ? '制作中...' : canCraftRecipe(state, recipe) ? '开始制作' : '材料不足'}
                 </button>
               </article>
             ))}
@@ -851,8 +1251,8 @@ function App() {
                 <meter min="0" max="100" value={getMasteryScore(state.mastery[selectedWord.id])} />
                 <span>熟练度 {getMasteryScore(state.mastery[selectedWord.id])}%</span>
                 <div className="practice-actions">
-                  <button type="button" className="ghost-button" disabled={speaking} onClick={() => void speakPracticeText(selectedWord.text)}>
-                    试听
+                  <button type="button" className="ghost-button" disabled={speaking} onClick={() => void speakPracticeItem(selectedWord)}>
+                    试听英文和中文
                   </button>
                   <button type="button" className="primary-button" disabled={listening || speaking} onClick={() => handleFreePractice(selectedWord.id)}>
                     自由练习
@@ -887,7 +1287,104 @@ function App() {
               <li key={item.id}>{item.text} · 熟练度 {getMasteryScore(state.mastery[item.id])}%</li>
             )) : <li>还没有薄弱词，先完成几次练习吧。</li>}
           </ul>
+
+          <h3>游戏流水日志</h3>
+          <div className="event-log-box">
+            {eventLog.length ? eventLog.slice(0, 100).map((entry) => (
+              <div key={entry.seq} className="event-log-row">
+                <span className="event-log-time">{entry.createdAt.slice(5, 16).replace('T', ' ')}</span>
+                <span className={`event-log-type event-type-${entry.type}`}>{eventLabel[entry.type] ?? entry.type}</span>
+                {entry.deltaStars !== 0 && (
+                  <span className={entry.deltaStars > 0 ? 'event-log-gain' : 'event-log-spend'}>
+                    {entry.deltaStars > 0 ? '+' : ''}{entry.deltaStars} ⭐
+                  </span>
+                )}
+                {entry.itemKey && entry.itemAmount > 0 && (
+                  <span className="event-log-item">
+                    {inventoryCatalog[entry.itemKey as InventoryKey]?.emoji ?? '🎁'} {inventoryCatalog[entry.itemKey as InventoryKey]?.label ?? entry.itemKey} ×{entry.itemAmount}
+                  </span>
+                )}
+                {entry.detail && <span className="event-log-detail">{entry.detail}</span>}
+              </div>
+            )) : <p className="soft-text">暂无流水记录。练习、兑换、抽奖、制作、收获都会记录在这里。</p>}
+          </div>
+
+          <h3>每日快照</h3>
+          <p className="soft-text">每天自动保存一份完整物品状态快照（当天最新），可用于数据恢复。</p>
+          <div className="snapshot-list">
+            {snapshots.length ? snapshots.map((snap) => (
+              <div
+                key={snap.date}
+                className={`snapshot-card${snapshotDetailDate === snap.date ? ' active' : ''}`}
+                onClick={async () => {
+                  if (snapshotDetailDate === snap.date) {
+                    setSnapshotDetailDate(null)
+                    setSnapshotDetail(null)
+                    return
+                  }
+                  setSnapshotDetailDate(snap.date)
+                  setSnapshotDetail(null)
+                  const detail = await getSnapshotDetail(snap.date, currentUser)
+                  setSnapshotDetail(detail.snapshot)
+                }}
+              >
+                <div className="snapshot-card-header">
+                  <strong>{snap.date}</strong>
+                  <span className="snapshot-time">{snap.createdAt.slice(11, 16)}</span>
+                </div>
+                <div className="snapshot-card-body">
+                  <span>⭐ {snap.totalStars}</span>
+                  <span>🏦 {snap.starBank}</span>
+                  <span>📝 {snap.resultsCount}</span>
+                  <span>📖 {snap.masteryCount}</span>
+                </div>
+                <div className="snapshot-card-garden">
+                  {snap.gardenPlots.filter((k) => k !== 'empty').join(' / ') || '空花园'}
+                </div>
+              </div>
+            )) : <p className="soft-text">暂无快照。下次保存数据时会自动生成。</p>}
+          </div>
+
+          {snapshotDetailDate && snapshotDetail && (
+            <div className="snapshot-detail">
+              <h4>快照详情 · {snapshotDetailDate}</h4>
+              <div className="snapshot-detail-grid">
+                <div><strong>累计星星</strong> {String(snapshotDetail.totalStars ?? 0)}</div>
+                <div><strong>可用星星</strong> {String(snapshotDetail.starBank ?? 0)}</div>
+                <div><strong>连续天数</strong> {String(snapshotDetail.streak ?? 0)}</div>
+                <div><strong>啵啵杯</strong> {String(snapshotDetail.bobaCups ?? 0)}</div>
+                <div><strong>蛋挞</strong> {String(snapshotDetail.eggTarts ?? 0)}</div>
+                <div><strong>招待点数</strong> {String(snapshotDetail.treatPoints ?? 0)}</div>
+              </div>
+              <h4>仓库物品</h4>
+              <div className="snapshot-inventory">
+                {Object.entries((snapshotDetail.inventory ?? {}) as Record<string, number>)
+                  .filter(([, v]) => v > 0)
+                  .map(([k, v]) => (
+                    <span key={k} className="snapshot-inv-item">
+                      {inventoryCatalog[k as InventoryKey]?.emoji ?? '📦'} {inventoryCatalog[k as InventoryKey]?.label ?? k} ×{v}
+                    </span>
+                  ))}
+              </div>
+              <h4>花园</h4>
+              <div className="snapshot-garden">
+                {((snapshotDetail.gardenPlots ?? []) as GardenPlot[]).map((p, i) => (
+                  <span key={i} className="snapshot-garden-plot">
+                    {p.kind === 'empty' ? '⬜' : (inventoryCatalog[p.kind as InventoryKey]?.emoji ?? '🌱')} {p.kind}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="hero-actions">
+            <button type="button" className="ghost-button" onClick={() => {
+              void getEventLog(currentUser).then(setEventLog)
+              void getSnapshots(currentUser).then(setSnapshots)
+              setFeedback('流水和快照已刷新。')
+            }}>
+              刷新流水
+            </button>
             <button type="button" className="ghost-button" onClick={() => exportGameState(state)}>
               导出备份
             </button>
@@ -906,13 +1403,15 @@ function App() {
             <button
               type="button"
               className="danger-button"
-              onClick={() => {
-                if (window.confirm('确定要清空所有学习记录吗？')) {
-                  const freshState = resetGameState()
-                  setState({
-                    ...freshState,
-                    missions: [generateDailyMission(freshState)],
-                  })
+              onClick={async () => {
+                if (window.confirm('确定要清空当前账号的所有学习记录吗？')) {
+                  if (window.confirm('此操作不可撤销，将删除所有星星、仓库、花园、任务和练习记录。再次确认要清空吗？')) {
+                    const freshState = await resetGameState(currentUser)
+                    setState({
+                      ...freshState,
+                      missions: [generateDailyMission(freshState)],
+                    })
+                  }
                 }
               }}
             >
@@ -961,14 +1460,20 @@ function App() {
                   }}
                 />
               </label>
-              <button type="button" className="ghost-button" onClick={() => setState((current) => ({ ...current, customCurriculum: [] }))}>
+              <button type="button" className="ghost-button" onClick={() => {
+                if (window.confirm('确定要清空自定义词库吗？')) {
+                  if (window.confirm('此操作将删除所有已导入的自定义词条，不可撤销。再次确认要清空吗？')) {
+                    setState((current) => ({ ...current, customCurriculum: [] }))
+                  }
+                }
+              }}>
                 清空自定义词库
               </button>
             </div>
             <p className="soft-text">自定义词库格式：JSON 数组，至少包含 text 和 meaning，可选 theme、level、emoji、prompt、difficulty、priority。</p>
           </section>
           <p className="soft-text">
-            当前词库、画像和学习记录都保存在浏览器本地存储。建议每周导出一次 JSON 备份。
+            词库、画像和学习记录都保存在数据库中，按天分表存储并记录流水。建议定期导出 JSON 备份。
           </p>
           {feedback && <p className="feedback">{feedback}</p>}
         </section>
@@ -989,9 +1494,18 @@ const viewLabel: Record<View, string> = {
   parent: '家长',
 }
 
+const eventLabel: Record<string, string> = {
+  practice_stars: '练习得星',
+  lottery: '抽奖',
+  shop_buy: '兑换',
+  craft: '制作',
+  harvest: '收获',
+}
+
 const skillLabel: Record<SkillType, string> = {
   listen: '听力',
   speak: '口语',
+  spell: '实操',
 }
 
 function getMissingInputs(state: GameState, recipe: (typeof recipes)[number]) {
@@ -1005,6 +1519,54 @@ function getMissingInputs(state: GameState, recipe: (typeof recipes)[number]) {
     .join('、') || '无'
 }
 
+function expandRecipeInputs(inputs: (typeof recipes)[number]['inputs']) {
+  return Object.entries(inputs).flatMap(([key, amount]) =>
+    Array.from({ length: amount ?? 0 }).map(() => key as InventoryKey),
+  )
+}
+
+function RecipeIngredientIcons({ inputs }: { inputs: (typeof recipes)[number]['inputs'] }) {
+  return (
+    <div className="recipe-ingredients" aria-label="制作材料">
+      {Object.entries(inputs).map(([key, amount]) => {
+        const itemKey = key as InventoryKey
+        return (
+          <div className="recipe-ingredient-group" key={key} aria-label={`${inventoryCatalog[itemKey].label} ${amount} 个`}>
+            {Array.from({ length: amount ?? 0 }).map((_, index) => (
+              <ItemIcon key={index} itemKey={itemKey} className="recipe-ingredient-icon" />
+            ))}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function CraftingStage({ animation }: { animation: CraftAnimation }) {
+  return (
+    <div className="crafting-stage" aria-live="polite">
+      <div className="crafting-machine">
+        <div className="crafting-inputs" aria-label="投入材料">
+          {animation.inputKeys.map((key, index) => (
+            <ItemIcon key={`${key}-${index}`} itemKey={key} className="crafting-flow-icon" />
+          ))}
+        </div>
+        <div className="crafting-core" aria-hidden="true">
+          <UiIcon iconKey="factory" label="工厂" className="crafting-factory-icon" />
+          <span className="crafting-gear gear-a">✦</span>
+          <span className="crafting-gear gear-b">✧</span>
+        </div>
+        <div className="crafting-output" aria-label="目标成品">
+          <ItemIcon itemKey={animation.outputKey} className="crafting-result-icon" />
+        </div>
+      </div>
+      <div className="crafting-progress"><span /></div>
+      <strong>{animation.recipeName} 制作中...</strong>
+      <small>材料正在进入机器，约 10 秒后完成。</small>
+    </div>
+  )
+}
+
 function getGardenDropAction(plot: GardenPlot | undefined, zone: GardenZone, key: InventoryKey) {
   if (!plot) return null
 
@@ -1015,7 +1577,13 @@ function getGardenDropAction(plot: GardenPlot | undefined, zone: GardenZone, key
     if (plot.kind === 'empty' && key === 'wheatSeed') {
       return (current: GameState) => plantInPlot(current, plot.id, 'wheat')
     }
-    if ((plot.kind === 'strawberry' || plot.kind === 'wheat') && (key === 'sunlight' || key === 'raindrop')) {
+    if (plot.kind === 'empty' && key === 'teaLeafSeed') {
+      return (current: GameState) => plantInPlot(current, plot.id, 'teaLeaf')
+    }
+    if ((plot.kind === 'strawberry' || plot.kind === 'wheat' || plot.kind === 'teaLeaf') && (key === 'sunlight' || key === 'raindrop')) {
+      const fieldCareRequirement = getFieldCareRequirement(plot.kind)
+      if (key === 'sunlight' && plot.sunlight >= fieldCareRequirement) return null
+      if (key === 'raindrop' && plot.raindrop >= fieldCareRequirement) return null
       return (current: GameState) => careForPlot(current, plot.id, key)
     }
   }
@@ -1025,6 +1593,8 @@ function getGardenDropAction(plot: GardenPlot | undefined, zone: GardenZone, key
       return (current: GameState) => plantInPlot(current, plot.id, 'chicken')
     }
     if (plot.kind === 'chicken' && key === 'chickenFeed') {
+      const eggCounts = plot.chickenEggs ?? Array.from({ length: plot.chickens ?? 1 }).map(() => 0)
+      if (plot.ready || eggCounts.every((eggCount) => eggCount >= 3)) return null
       return (current: GameState) => careForPlot(current, plot.id, 'chickenFeed')
     }
   }
@@ -1087,8 +1657,14 @@ function GardenPlotCard({
 function getPlotHint(plot: GardenPlot, zone: GardenZone) {
   if (zone === 'field' && plot.kind === 'empty') return '拖草莓种子或小麦种子到这里。'
   if (zone === 'coop' && plot.kind === 'empty') return '拖小鸡到这里，最多 3 只。'
-  if (plot.kind === 'chicken') return plot.ready ? '小鸡下蛋啦，点击收获。' : `拖小鸡或鸡食料到这里，当前 ${plot.chickens ?? 1}/3 只。`
-  if (plot.kind === 'strawberry' || plot.kind === 'wheat') return plot.ready ? '已经长大啦，点击收获。' : '照料进度会显示在田地下面。'
+  if (plot.kind === 'chicken') {
+    const eggCounts = plot.chickenEggs ?? Array.from({ length: plot.chickens ?? 1 }).map(() => 0)
+    return plot.ready ? '小鸡下蛋啦，点击收获。' : `拖小鸡或鸡食料到这里，当前 ${plot.chickens ?? 1}/3 只，产蛋进度 ${eggCounts.join('/') || 0}/3。`
+  }
+  if (plot.kind === 'strawberry' || plot.kind === 'wheat' || plot.kind === 'teaLeaf') {
+    const fieldCareRequirement = getFieldCareRequirement(plot.kind)
+    return plot.ready ? '已经长大啦，点击收获。' : `需要 ${fieldCareRequirement} 个阳光和 ${fieldCareRequirement} 个雨露。`
+  }
   return '等待放入材料。'
 }
 
@@ -1096,13 +1672,14 @@ function getShortPlotHint(plot: GardenPlot, zone: GardenZone) {
   if (plot.kind === 'empty' && zone === 'field') return '放种子'
   if (plot.kind === 'empty' && zone === 'coop') return '放小鸡'
   if (plot.kind === 'chicken') return plot.ready ? '可收蛋' : `${plot.chickens ?? 1}/3 小鸡`
-  if (plot.kind === 'strawberry' || plot.kind === 'wheat') return plot.ready ? '可收获' : ''
+  if (plot.kind === 'strawberry' || plot.kind === 'wheat' || plot.kind === 'teaLeaf') return plot.ready ? '可收获' : ''
   return '拖到这里'
 }
 
 function getPlotMeta(plot: GardenPlot, zone?: GardenZone): { itemKey?: InventoryKey; label: string; output: string } {
   if (plot.kind === 'strawberry') return { itemKey: plot.ready ? 'strawberry' : 'strawberrySeed', label: '草莓地', output: '草莓' }
   if (plot.kind === 'wheat') return { itemKey: plot.ready ? 'wheat' : 'wheatSeed', label: '小麦地', output: '小麦' }
+  if (plot.kind === 'teaLeaf') return { itemKey: plot.ready ? 'teaLeaf' : 'teaLeafSeed', label: '茶地', output: '茶叶' }
   if (plot.kind === 'chicken') return { itemKey: plot.ready ? 'egg' : 'chicken', label: `鸡窝 ${plot.chickens ?? 1}/3`, output: '鸡蛋' }
   if (zone === 'coop') return { label: '空鸡窝', output: '' }
   return { label: '空花田', output: '' }
@@ -1190,7 +1767,7 @@ function DraggableInventoryItem({
           <h3>{meta.label}</h3>
           <p>{meta.group}</p>
           <strong>拥有 {count}</strong>
-          <small>{canDrag ? '拖到花园使用' : '暂无'}</small>
+          <small>{meta.source}</small>
         </>
       )}
     </article>
@@ -1241,6 +1818,30 @@ function UiIcon({
   )
 }
 
+function FieldPlotIcon({ kind, ready }: { kind: 'strawberry' | 'wheat' | 'teaLeaf'; ready: boolean }) {
+  const fieldSrc = kind === 'strawberry' ? '/items/草莓地.png' : kind === 'wheat' ? '/items/小麦地.png' : '/items/茶地.png'
+  const fallbackKey: InventoryKey = kind === 'strawberry'
+    ? ready ? 'strawberry' : 'strawberrySeed'
+    : kind === 'wheat'
+      ? ready ? 'wheat' : 'wheatSeed'
+      : ready ? 'teaLeaf' : 'teaLeafSeed'
+  const fallbackSrc = inventoryCatalog[fallbackKey].iconSrc ?? ''
+  const label = kind === 'strawberry' ? '草莓地' : kind === 'wheat' ? '小麦地' : '茶地'
+
+  return (
+    <div className={`item-icon icon-${fallbackKey} plot-item-icon field-plot-icon`} aria-label={`${label}图标`} role="img">
+      <img
+        src={fieldSrc}
+        alt=""
+        onError={(event) => {
+          event.currentTarget.onerror = null
+          event.currentTarget.src = fallbackSrc
+        }}
+      />
+    </div>
+  )
+}
+
 function renderPlotArt(plot: GardenPlot, zone: GardenZone) {
   if (plot.kind === 'empty' && zone === 'field') return <UiIcon iconKey="emptyField" label="空田地" className="plot-ui-icon" />
   if (zone === 'coop') {
@@ -1257,8 +1858,9 @@ function renderPlotArt(plot: GardenPlot, zone: GardenZone) {
       </div>
     )
   }
-  if (plot.kind === 'strawberry') return <ItemIcon itemKey={plot.ready ? 'strawberry' : 'strawberrySeed'} className="plot-item-icon" />
-  if (plot.kind === 'wheat') return <ItemIcon itemKey={plot.ready ? 'wheat' : 'wheatSeed'} className="plot-item-icon" />
+  if (plot.kind === 'strawberry') return <FieldPlotIcon kind="strawberry" ready={plot.ready} />
+  if (plot.kind === 'wheat') return <FieldPlotIcon kind="wheat" ready={plot.ready} />
+  if (plot.kind === 'teaLeaf') return <FieldPlotIcon kind="teaLeaf" ready={plot.ready} />
   return null
 }
 
@@ -1268,6 +1870,7 @@ function renderPlotStatus(plot: GardenPlot, zone: GardenZone) {
       <>
         <ItemIcon itemKey="strawberrySeed" className="mini-status-icon" />
         <ItemIcon itemKey="wheatSeed" className="mini-status-icon" />
+        <ItemIcon itemKey="teaLeafSeed" className="mini-status-icon" />
       </>
     )
   }
@@ -1277,19 +1880,26 @@ function renderPlotStatus(plot: GardenPlot, zone: GardenZone) {
   }
 
   if (plot.kind === 'chicken') {
+    const eggCounts = (plot.chickenEggs ?? Array.from({ length: plot.chickens ?? 1 }).map(() => 0)).slice(0, plot.chickens ?? 1)
     return (
       <>
         {plot.ready ? <ItemIcon itemKey="egg" className="mini-status-icon" /> : <ItemIcon itemKey="chickenFeed" className="mini-status-icon" />}
         {(plot.chickens ?? 1) < 3 && <ItemIcon itemKey="chicken" className="mini-status-icon" />}
+        <span className="egg-cycle-status">{eggCounts.map((count) => `${count}/3`).join(' · ')}</span>
       </>
     )
   }
 
-  if (plot.kind === 'strawberry' || plot.kind === 'wheat') {
+  if (plot.kind === 'strawberry' || plot.kind === 'wheat' || plot.kind === 'teaLeaf') {
+    const fieldCareRequirement = getFieldCareRequirement(plot.kind)
     return (
-      <div className="plot-growth-progress">
-        <span className={`growth-step sunlight ${plot.sunlight ? 'done' : ''}`} />
-        <span className={`growth-step raindrop ${plot.raindrop ? 'done' : ''}`} />
+      <div className="plot-growth-needs" aria-label={`需要阳光 ${fieldCareRequirement} 个、雨露 ${fieldCareRequirement} 个`}>
+        {Array.from({ length: fieldCareRequirement }).map((_, index) => (
+          <ItemIcon key={`sun-${index}`} itemKey="sunlight" className={`growth-need-icon ${plot.sunlight > index ? 'done' : ''}`} />
+        ))}
+        {Array.from({ length: fieldCareRequirement }).map((_, index) => (
+          <ItemIcon key={`rain-${index}`} itemKey="raindrop" className={`growth-need-icon ${plot.raindrop > index ? 'done' : ''}`} />
+        ))}
       </div>
     )
   }
