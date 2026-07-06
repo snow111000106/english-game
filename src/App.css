@@ -909,6 +909,40 @@ button:disabled {
   font-weight: 800;
 }
 
+.listening-result-word {
+  align-items: center;
+  background: #fff7d7;
+  border-radius: 18px;
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin: 12px auto;
+  padding: 14px 18px;
+}
+
+.listening-result-text {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-word-en {
+  color: #d63384;
+  font-size: 1.6rem;
+  font-weight: 900;
+}
+
+.result-word-cn {
+  color: #865b00;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.listening-result-text .ghost-button {
+  margin-top: 4px;
+}
+
 .practice-result em {
   background: #fff7d7;
   border-radius: 18px;

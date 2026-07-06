@@ -973,6 +973,18 @@ function App() {
                     </div>
                     <strong>{practiceFeedback.score} 分</strong>
                     <p>{practiceFeedback.message}</p>
+                    {activeTask.skill === 'listen' && (
+                      <div className="listening-result-word">
+                        <WordPicture emoji={activeItem.emoji} theme={activeItem.theme} label={activeItem.text} small />
+                        <div className="listening-result-text">
+                          <strong className="result-word-en">{activeItem.text}</strong>
+                          <span className="result-word-cn">{activeItem.meaning}</span>
+                          <button type="button" className="ghost-button" disabled={speaking || listening} onClick={() => void speakPracticeText(activeItem.text)}>
+                            🔊 再听一遍
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <small>{activeTask.skill === 'listen' ? `选图次数：${activeListeningAttempts || 1}` : activeTask.skill === 'spell' ? `你输入：${practiceFeedback.transcript || '—'}` : `我听到：${practiceFeedback.transcript || '—'}`}</small>
                     {practiceFeedback.stars >= 3 && (
                       <em>
